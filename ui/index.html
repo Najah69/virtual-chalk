@@ -1,0 +1,68 @@
+<!doctype html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8" />
+  <title>Virtual-Chalk</title>
+  <link rel="stylesheet" href="css/style.css" />
+</head>
+<body>
+  <div class="app-shell">
+    <nav class="steps-nav">
+      <div class="step active" data-step="1">1. Importer</div>
+      <div class="step" data-step="2">2. Script</div>
+      <div class="step" data-step="3">3. Style &amp; voix</div>
+      <div class="step" data-step="4">4. Génération</div>
+      <div class="step" data-step="5">5. Résultat</div>
+      <button class="secondary" id="btn-settings" style="margin-left:auto">Réglages</button>
+    </nav>
+
+    <section class="step-panel active" data-step="1">
+      <h2>Importer un contenu</h2>
+      <textarea id="source-text" rows="8" style="width:100%" placeholder="Collez du texte ici..."></textarea>
+      <p>ou</p>
+      <button class="secondary" id="btn-pick-file">Choisir un fichier (PDF/DOCX/MD/TXT)</button>
+      <input type="text" id="source-url" placeholder="ou collez une URL" style="width:100%; margin-top:12px" />
+      <div style="margin-top:24px">
+        <button class="primary" id="btn-go-step2">Générer le script →</button>
+      </div>
+    </section>
+
+    <section class="step-panel" data-step="2">
+      <h2>Script généré</h2>
+      <div id="scenes-editor"></div>
+      <button class="primary" id="btn-go-step3">Continuer →</button>
+    </section>
+
+    <section class="step-panel" data-step="3">
+      <h2>Style et voix</h2>
+      <div class="theme-gallery" id="theme-gallery"></div>
+      <label style="display:block; margin-top:20px">
+        Voix
+        <select id="voice-select"></select>
+      </label>
+      <label style="display:block; margin-top:12px">
+        <input type="checkbox" id="export-h5p" checked />
+        Exporter aussi en .h5p pour Moodle
+      </label>
+      <button class="primary" id="btn-go-step4" style="margin-top:20px">Générer la vidéo →</button>
+    </section>
+
+    <section class="step-panel" data-step="4">
+      <h2>Génération en cours</h2>
+      <p id="progress-label">Script...</p>
+      <progress id="progress-bar" value="0" max="1"></progress>
+    </section>
+
+    <section class="step-panel" data-step="5">
+      <h2>Résultat</h2>
+      <video id="result-video" controls style="max-width:100%"></video>
+      <div style="margin-top:16px">
+        <button class="secondary" id="btn-open-folder">Ouvrir le dossier</button>
+        <button class="secondary" id="btn-edit">Modifier la vidéo</button>
+      </div>
+    </section>
+  </div>
+
+  <script src="js/app.js"></script>
+</body>
+</html>

@@ -1,0 +1,11 @@
+__pycache__/
+*.pyc
+.venv/
+venv/
+build/output/
+dist/
+*.spec.bak
+*.golpoproj/
+/output/
+.DS_Store
+Thumbs.db

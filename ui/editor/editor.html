@@ -1,0 +1,38 @@
+<!doctype html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8" />
+  <title>Virtual-Chalk — Éditeur</title>
+  <link rel="stylesheet" href="../css/style.css" />
+  <style>
+    .editor-layout { display: flex; height: 100vh; }
+    .scene-list { width: 220px; border-right: 1px solid #e2e0da; overflow-y: auto; }
+    .scene-list .scene-item { padding: 12px; cursor: pointer; border-bottom: 1px solid #eee; }
+    .scene-list .scene-item.selected { background: var(--board-green); color: white; }
+    .canvas-preview { flex: 1; display: flex; align-items: center; justify-content: center; background: #222; }
+    .properties-panel { width: 280px; border-left: 1px solid #e2e0da; padding: 16px; }
+  </style>
+</head>
+<body>
+  <div class="editor-layout">
+    <div class="scene-list" id="scene-list"></div>
+    <div class="canvas-preview">
+      <canvas id="preview-canvas" width="960" height="540" style="background:#1f4d3a"></canvas>
+    </div>
+    <div class="properties-panel">
+      <h3>Propriétés</h3>
+      <label>Texte<textarea id="prop-text" rows="4" style="width:100%"></textarea></label>
+      <label>Couleur de craie/feutre
+        <input type="color" id="prop-color" />
+      </label>
+      <label>Durée (s)<input type="number" id="prop-duration" /></label>
+      <div style="margin-top:16px">
+        <button class="primary" id="btn-rerender-scene">Re-render cette scène</button>
+        <button class="secondary" id="btn-rerender-all">Re-render tout</button>
+      </div>
+    </div>
+  </div>
+
+  <script src="editor.js"></script>
+</body>
+</html>

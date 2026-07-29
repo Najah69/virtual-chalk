@@ -1,0 +1,47 @@
+<!doctype html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8" />
+  <title>Virtual-Chalk render surface</title>
+  <style>
+    html, body { margin: 0; background: #000; }
+    canvas { display: block; }
+  </style>
+</head>
+<body>
+  <canvas id="stage" width="1920" height="1080"></canvas>
+
+  <script src="themes.js"></script>
+  <script src="surfaces/blackboard.js"></script>
+  <script src="surfaces/greenboard.js"></script>
+  <script src="surfaces/whiteboard.js"></script>
+  <script src="tools/chalk.js"></script>
+  <script src="tools/marker_veleda.js"></script>
+  <script src="text_to_path.js"></script>
+  <script>
+    const canvas = document.getElementById("stage");
+    const ctx = canvas.getContext("2d");
+    let currentScene = null;
+    let currentTheme = null;
+
+    // Appelé par Python (FrameCapture) avant de rendre les frames d'une scène.
+    window.loadScene = function (scene, themeId) {
+      currentScene = scene;
+      currentTheme = window.getTheme(themeId);
+    };
+
+    // Appelé par Python pour chaque frame, avec le temps virtuel écoulé (s).
+    window.renderAtTime = function (t) {
+      if (!currentScene || !currentTheme) return;
+      const { width, height } = canvas;
+      window.SURFACES[currentTheme.surface](ctx, width, height);
+
+      const drawStroke = window.TOOLS[currentTheme.tool];
+      const progress = Math.min(1, t / currentScene.duration_sec);
+      for (const stroke of currentScene.strokes || []) {
+        drawStroke(ctx, stroke.points, stroke.color, stroke.width, progress);
+      }
+    };
+  </script>
+</body>
+</html>
