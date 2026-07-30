@@ -35,9 +35,21 @@ def encode_scene(frames_dir: Path, audio_path: Path, fps: int, out_path: Path,
     else:
         cmd += ["-map", "0:v", "-map", "1:a"]
 
+    # Les frames JPEG sont en plage complète (0-255, "pc"/"full") — sans
+    # conversion explicite, le fichier de sortie reste tagué full-range
+    # (yuvj420p) alors que la quasi-totalité des lecteurs vidéo attendent
+    # la plage limitée standard (16-235, "tv") pour du H.264 : le résultat
+    # apparaît délavé/plat dans un lecteur normal, même si une extraction
+    # de frame via ffmpeg (qui respecte le tag) semble correcte. `scale`
+    # remappe réellement les valeurs de pixels, pas juste l'étiquette.
+    cmd += ["-vf", "scale=in_range=full:out_range=tv"]
+
     # crf 18 plutôt que le défaut (23) : le texte à la craie est un détail
     # fin et peu contrasté, une compression plus agressive le rend illisible.
-    cmd += ["-c:v", "libx264", "-crf", "18", "-pix_fmt", "yuv420p", "-c:a", "aac", "-shortest", str(out_path)]
+    cmd += [
+        "-c:v", "libx264", "-crf", "18", "-pix_fmt", "yuv420p", "-color_range", "tv",
+        "-c:a", "aac", "-shortest", str(out_path),
+    ]
     subprocess.run(cmd, check=True)
     return out_path
 
