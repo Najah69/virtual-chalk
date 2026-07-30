@@ -35,7 +35,9 @@ def encode_scene(frames_dir: Path, audio_path: Path, fps: int, out_path: Path,
     else:
         cmd += ["-map", "0:v", "-map", "1:a"]
 
-    cmd += ["-c:v", "libx264", "-pix_fmt", "yuv420p", "-c:a", "aac", "-shortest", str(out_path)]
+    # crf 18 plutôt que le défaut (23) : le texte à la craie est un détail
+    # fin et peu contrasté, une compression plus agressive le rend illisible.
+    cmd += ["-c:v", "libx264", "-crf", "18", "-pix_fmt", "yuv420p", "-c:a", "aac", "-shortest", str(out_path)]
     subprocess.run(cmd, check=True)
     return out_path
 

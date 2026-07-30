@@ -30,6 +30,9 @@
     // Les strokes de type "texte" n'arrivent qu'avec un point d'ancrage
     // (position) — on les développe ici en tracé dessinable, une seule fois
     // par scène, pas à chaque frame.
+    // Le fond du tableau est dessiné ICI, une seule fois : il ne change
+    // jamais pendant la scène (seule la craie s'accumule dessus), donc pas
+    // besoin de le redessiner à chaque frame comme avant.
     window.loadScene = function (scene, themeId) {
       currentScene = scene;
       currentTheme = window.getTheme(themeId);
@@ -38,18 +41,25 @@
           const anchor = stroke.points[0];
           stroke.points = window.textToPaths(stroke.text, anchor.x, anchor.y, stroke.width);
         }
+        stroke._lastDrawnCount = 0;
       }
+      const { width, height } = canvas;
+      window.SURFACES[currentTheme.surface](ctx, width, height);
     };
 
     // Appelé par Python pour chaque frame, avec le temps virtuel écoulé (s).
     // start_sec/end_sec de chaque stroke sont calculés côté Python
     // (app/render/timing.py) : le JS ne fait que les lire, pour que les
     // tracés s'écrivent l'un après l'autre plutôt que tous en même temps.
+    //
+    // Rendu INCRÉMENTAL : on ne redessine jamais depuis le début d'un
+    // tracé, seulement la portion nouvellement révélée depuis le dernier
+    // appel (stroke._lastDrawnCount, géré par chaque outil). Redessiner
+    // tout à chaque frame coûtait O(frames × tampons visibles) — avec de
+    // vrais contours de lettres (bien plus de points qu'un simple
+    // placeholder), ce coût explosait et rendait le rendu très lent.
     window.renderAtTime = function (t) {
       if (!currentScene || !currentTheme) return;
-      const { width, height } = canvas;
-      window.SURFACES[currentTheme.surface](ctx, width, height);
-
       const drawStroke = window.TOOLS[currentTheme.tool];
       for (const stroke of currentScene.strokes || []) {
         const span = Math.max(stroke.end_sec - stroke.start_sec, 0.0001);

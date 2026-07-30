@@ -23,15 +23,19 @@ function hashSeed(stroke) {
 // par stroke (mis en cache dessus). Régénérer le grain avec Math.random() à
 // chaque frame ferait scintiller la portion déjà tracée d'une image à
 // l'autre — la craie ne doit pas changer d'aspect une fois posée.
+//
+// Le trait est volontairement dense/opaque (dabs rapprochés, alpha élevé) :
+// un rendu trop délicat ne survit pas à la compression vidéo H.264 sur un
+// fond texturé — testé, un premier réglage plus fin/pâle devenait quasi
+// invisible une fois la vidéo encodée.
 function chalkPrecompute(stroke) {
   const rng = mulberry32(hashSeed(stroke));
   const path = stroke.points;
   // Pour du texte, stroke.width est la taille de police (utilisée pour
   // positionner/dimensionner les lettres), pas l'épaisseur du trait de
-  // craie — un trait de lettre doit rester fin, sans quoi les contours de
-  // lettres deviennent illisibles (blob épais au lieu d'un tracé net).
-  const penWidth = stroke.kind === "text" ? Math.max(4, stroke.width * 0.12) : stroke.width;
-  const spacing = Math.max(1.2, penWidth * 0.6);
+  // craie.
+  const penWidth = stroke.kind === "text" ? Math.max(7, stroke.width * 0.22) : stroke.width;
+  const spacing = Math.max(1, penWidth * 0.4);
   const dabs = [];
 
   for (let i = 1; i < path.length; i++) {
@@ -44,16 +48,16 @@ function chalkPrecompute(stroke) {
       const frac = s / steps;
       const cx = a.x + (b.x - a.x) * frac;
       const cy = a.y + (b.y - a.y) * frac;
-      const dotCount = 5 + Math.floor(rng() * 5);
+      const dotCount = 6 + Math.floor(rng() * 4);
       const dots = [];
       for (let d = 0; d < dotCount; d++) {
         const angle = rng() * Math.PI * 2;
-        const r = rng() * penWidth * 0.5;
+        const r = rng() * penWidth * 0.45;
         dots.push({
           dx: Math.cos(angle) * r,
           dy: Math.sin(angle) * r,
-          size: 0.4 + rng() * 1.1,
-          alpha: 0.15 + rng() * 0.35,
+          size: 0.6 + rng() * 1.3,
+          alpha: 0.45 + rng() * 0.4,
         });
       }
       dabs.push({ x: cx, y: cy, dots });
@@ -65,16 +69,23 @@ function chalkPrecompute(stroke) {
 // Effet craie : tamponne un grain "stipple" (nuage de points minuscules,
 // taille/opacité irrégulières) le long du tracé plutôt qu'un trait plein —
 // c'est ce qui distingue une craie crédible d'un simple trait vectoriel.
+//
+// Dessin INCRÉMENTAL : ne redessine que les tampons nouvellement révélés
+// depuis le dernier appel (stroke._lastDrawnCount), jamais tout depuis le
+// début — redessiner l'intégralité à chaque frame coûtait O(frames ×
+// tampons visibles), ce qui explosait avec de vrais contours de lettres.
 window.TOOLS.chalk = function drawStroke(ctx, stroke, progress) {
   if (!stroke._chalkDabs) {
     stroke._chalkDabs = chalkPrecompute(stroke);
   }
   const dabs = stroke._chalkDabs;
   const visibleCount = Math.floor(dabs.length * progress);
+  const from = stroke._lastDrawnCount || 0;
+  if (visibleCount <= from) return;
 
   ctx.save();
   ctx.fillStyle = stroke.color;
-  for (let i = 0; i < visibleCount; i++) {
+  for (let i = from; i < visibleCount; i++) {
     const dab = dabs[i];
     for (const dot of dab.dots) {
       ctx.globalAlpha = dot.alpha;
@@ -84,4 +95,5 @@ window.TOOLS.chalk = function drawStroke(ctx, stroke, progress) {
     }
   }
   ctx.restore();
+  stroke._lastDrawnCount = visibleCount;
 };

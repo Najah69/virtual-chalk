@@ -9,10 +9,14 @@ window.buildBoardNoise = function buildBoardNoise(width, height, baseColor) {
   octx.fillStyle = baseColor;
   octx.fillRect(0, 0, width, height);
 
+  // Amplitude volontairement faible : un grain trop marqué consomme du
+  // débit vidéo (bruit haute fréquence coûteux à compresser en H.264) au
+  // détriment de la lisibilité du texte à la craie, qui doit rester la
+  // priorité visuelle.
   const imageData = octx.getImageData(0, 0, width, height);
   const data = imageData.data;
   for (let i = 0; i < data.length; i += 4) {
-    const grain = (Math.random() - 0.5) * 14;
+    const grain = (Math.random() - 0.5) * 5;
     data[i] = Math.min(255, Math.max(0, data[i] + grain));
     data[i + 1] = Math.min(255, Math.max(0, data[i + 1] + grain));
     data[i + 2] = Math.min(255, Math.max(0, data[i + 2] + grain));
