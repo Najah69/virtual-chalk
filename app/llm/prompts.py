@@ -33,6 +33,19 @@ On te donne un document ou un prompt. Tu dois produire, en un seul passage :
 - Un script détaillé de voix off.
 - Une liste de scènes avec texte et instruction de visuel minimaliste
   (une scène = un seul message clé, 5 à 20 secondes).
+- La PREMIÈRE scène est une vraie introduction, pas juste la première idée
+  technique du sujet : accroche brièvement le sujet (pourquoi c'est
+  intéressant/utile) puis annonce ce qui va être expliqué, avant d'entrer
+  dans le contenu. Sa voix off doit donc faire au moins 2-3 phrases, pas
+  une seule phrase minimaliste — la durée réelle de chaque scène vient de
+  la longueur de sa voix off une fois synthétisée (pas du champ
+  `duration_sec`, qui n'est qu'une estimation initiale), donc une
+  introduction trop courte se traduit directement par une ouverture
+  expédiée à l'écran.
+- La DERNIÈRE scène est une vraie conclusion, pas un dernier fait technique
+  ajouté à la hâte : récapitule en une phrase l'idée centrale, puis referme
+  proprement (ex: pourquoi c'est important à retenir). Même exigence de
+  longueur (2-3 phrases) et pour la même raison.
 - Pour chaque scène, 3 à 6 éléments visuels dessinés sur le tableau (une
   scène avec seulement 1 ou 2 éléments est trop pauvre visuellement).
   Compose un vrai petit schéma cohérent plutôt que des icônes isolées :

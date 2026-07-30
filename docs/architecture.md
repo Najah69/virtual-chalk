@@ -271,6 +271,29 @@ Même pattern d'abstraction pour les deux :
   projets. Clonage de voix = uniquement via provider cloud (impossible
   correctement en local sur machine modeste), option opt-in explicite.
 
+## Rythme de l'intro/conclusion (pas un bug de rendu)
+
+Retour utilisateur : "on dirait que tout le début de la vidéo a été tronqué,
+et même une partie de la fin" — après vérification approfondie (durée du
+conteneur, intégrité de l'audio, contenu image à l'ouverture/fermeture),
+aucune frame ni aucun son n'est réellement coupé. Le vrai problème :
+absence d'introduction/conclusion — la scène d'ouverture enchaînait
+directement sur un fait technique, la scène de clôture ajoutait un dernier
+fait à la hâte, sans accroche ni récapitulatif — d'où l'impression de
+précipitation.
+
+Point clé à ne pas oublier en travaillant sur le timing des scènes : le
+champ `duration_sec` produit par le LLM (`app/llm/prompts.py`) n'est
+qu'une estimation initiale, écrasée par la durée réelle de l'audio
+synthétisé dans `Pipeline.synthesize_voices` (`app/pipeline.py`) avant le
+rendu. La durée effective d'une scène à l'écran vient donc entièrement de
+la longueur de sa voix off une fois synthétisée — une scène d'intro/
+conclusion trop courte en texte est nécessairement expédiée à l'écran,
+quel que soit le `duration_sec` demandé. Le prompt système exige donc
+explicitement 2-3 phrases pour la première scène (accroche + annonce du
+sujet) et la dernière (récapitulatif + phrase de clôture), plutôt que le
+message clé unique attendu des scènes intermédiaires.
+
 ## Export H5P (finalité du projet, pas une extension)
 
 `h5p/packager.py` construit `h5p.json` + `content/content.json` autour du
