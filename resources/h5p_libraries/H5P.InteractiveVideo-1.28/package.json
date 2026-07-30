@@ -1,0 +1,41 @@
+{
+  "name": "h5p-interactive-video",
+  "version": "1.25.0",
+  "description": "Put texts, tasks and other medias on top of your video.",
+  "private": true,
+  "scripts": {
+    "test": "ava",
+    "dev": "cross-env NODE_ENV='development' webpack",
+    "build": "cross-env NODE_ENV='production' webpack",
+    "watch": "webpack --watch"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/h5p/h5p-interactive-video.git"
+  },
+  "keywords": [
+    "h5p",
+    "content-type"
+  ],
+  "author": "Joubel",
+  "license": "MIT",
+  "devDependencies": {
+    "@babel/cli": "^7.24.1",
+    "@babel/core": "^7.24.3",
+    "@babel/plugin-proposal-object-rest-spread": "^7.18.0",
+    "@babel/plugin-transform-object-assign": "^7.24.1",
+    "@babel/preset-env": "^7.24.3",
+    "babel-loader": "^9.1.3",
+    "cross-env": "^7.0.3",
+    "css-loader": "^6.10.0",
+    "h5p-lib-controls": "github:h5p/h5p-lib-controls#0.0.17",
+    "h5p-parent": "0.0.2",
+    "mini-css-extract-plugin": "^2.8.1",
+    "regenerator-runtime": "^0.14.1",
+    "resolve-url-loader": "^5.0.0",
+    "sass": "^1.72.0",
+    "sass-loader": "^14.1.1",
+    "webpack": "^5.91.0",
+    "webpack-cli": "^5.1.4"
+  }
+}

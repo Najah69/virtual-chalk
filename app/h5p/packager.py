@@ -8,13 +8,29 @@ from pathlib import Path
 H5P_LIBRARIES_DIR = Path(__file__).resolve().parent.parent.parent / "resources" / "h5p_libraries"
 
 
+def _interactive_video_version() -> tuple[int, int]:
+    """Lit la version réellement embarquée dans resources/h5p_libraries/
+    plutôt que de la figer en dur, pour ne jamais désynchroniser h5p.json
+    de ce qui est effectivement présent dans le zip (Moodle rejette un
+    .h5p qui déclare une version de librairie absente du paquet)."""
+    matches = sorted(H5P_LIBRARIES_DIR.glob("H5P.InteractiveVideo-*"))
+    if not matches:
+        raise FileNotFoundError(
+            f"H5P.InteractiveVideo introuvable dans {H5P_LIBRARIES_DIR} — "
+            "voir resources/h5p_libraries/README.txt"
+        )
+    library_json = json.loads((matches[0] / "library.json").read_text(encoding="utf-8"))
+    return library_json["majorVersion"], library_json["minorVersion"]
+
+
 def _h5p_json(title: str) -> dict:
+    major, minor = _interactive_video_version()
     return {
         "title": title,
         "mainLibrary": "H5P.InteractiveVideo",
         "language": "und",
         "preloadedDependencies": [
-            {"machineName": "H5P.InteractiveVideo", "majorVersion": 1, "minorVersion": 25},
+            {"machineName": "H5P.InteractiveVideo", "majorVersion": major, "minorVersion": minor},
         ],
     }
 
