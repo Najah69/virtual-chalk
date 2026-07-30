@@ -22,7 +22,17 @@
       <textarea id="source-text" rows="8" style="width:100%" placeholder="Collez du texte ici..."></textarea>
       <p>ou</p>
       <button class="secondary" id="btn-pick-file">Choisir un fichier (PDF/DOCX/MD/TXT)</button>
+      <div id="picked-file-label" style="margin-top:6px; font-size:13px; color:#666"></div>
       <input type="text" id="source-url" placeholder="ou collez une URL" style="width:100%; margin-top:12px" />
+      <input type="text" id="source-github" placeholder="ou collez un dépôt GitHub (owner/repo ou https://github.com/owner/repo)" style="width:100%; margin-top:12px" />
+      <label style="display:block; margin-top:8px">
+        Type de vidéo (dépôt GitHub uniquement)
+        <select id="github-content-kind">
+          <option value="architecture">Architecture de projet</option>
+          <option value="installation">Guide d'installation et de prise en main</option>
+          <option value="changelog">Nouveautés / changelog</option>
+        </select>
+      </label>
       <div style="margin-top:24px">
         <button class="primary" id="btn-go-step2">Générer le script →</button>
       </div>

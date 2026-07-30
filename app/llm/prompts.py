@@ -177,5 +177,31 @@ respectant strictement ce schéma :
 """
 
 
-def build_user_prompt(source_text: str) -> str:
-    return f"Contenu à expliquer :\n\n{source_text}"
+# Angle a adopter quand la source vient d'un depot GitHub (voir
+# app/ingestion/github.py) — le contenu brut (README/CHANGELOG) ne dit pas
+# lui-meme sous quel angle le presenter, contrairement a un texte/document
+# deja redige pour un lecteur humain.
+GITHUB_CONTENT_KINDS = {
+    "architecture": (
+        "Ce contenu est un dépôt de code logiciel. Structure la vidéo comme "
+        "une explication d'architecture technique : composants principaux, "
+        "comment ils s'articulent entre eux, concepts de classes/API/modules "
+        "clés — pas une simple lecture du README."
+    ),
+    "installation": (
+        "Ce contenu est un dépôt de code logiciel. Structure la vidéo comme "
+        "un guide d'installation et de prise en main : prérequis, étapes "
+        "d'installation dans l'ordre, premier lancement/usage basique."
+    ),
+    "changelog": (
+        "Ce contenu est un dépôt de code logiciel. Structure la vidéo comme "
+        "une présentation des nouveautés/changements récents (release "
+        "notes) : ce qui a changé, pourquoi c'est utile pour l'utilisateur."
+    ),
+}
+
+
+def build_user_prompt(source_text: str, github_content_kind: str | None = None) -> str:
+    hint = GITHUB_CONTENT_KINDS.get(github_content_kind or "", "")
+    prefix = f"{hint}\n\n" if hint else ""
+    return f"{prefix}Contenu à expliquer :\n\n{source_text}"

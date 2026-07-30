@@ -46,10 +46,28 @@ async function loadVideoProfiles() {
   select.innerHTML = profiles.map((p) => `<option value="${p.key}">${p.label}</option>`).join("");
 }
 
+let pickedFilePath = null;
+
 document.getElementById("btn-pick-file").addEventListener("click", async () => {
   const path = await window.pywebview.api.pick_file();
-  if (path) document.getElementById("source-text").value = `[Fichier sélectionné] ${path}`;
+  if (path) {
+    pickedFilePath = path;
+    document.getElementById("picked-file-label").textContent = `Fichier sélectionné : ${path}`;
+  }
 });
+
+// Determine la source a envoyer au pipeline selon ce que l'utilisateur a
+// rempli, par ordre de priorite (fichier choisi > URL GitHub > URL simple >
+// texte colle) — avant ce correctif, seul le texte colle etait jamais
+// transmis (fichier/URL etaient ignores silencieusement).
+function resolveSource() {
+  if (pickedFilePath) return { type: "file", value: pickedFilePath };
+  const githubUrl = document.getElementById("source-github").value.trim();
+  if (githubUrl) return { type: "github", value: githubUrl };
+  const url = document.getElementById("source-url").value.trim();
+  if (url) return { type: "url", value: url };
+  return { type: "text", value: document.getElementById("source-text").value };
+}
 
 document.getElementById("btn-go-step2").addEventListener("click", () => goToStep(2));
 document.getElementById("btn-go-step3").addEventListener("click", () => goToStep(3));
@@ -58,12 +76,15 @@ let lastVideoPath = null;
 
 document.getElementById("btn-go-step4").addEventListener("click", async () => {
   goToStep(4);
-  const source = { type: "text", value: document.getElementById("source-text").value };
+  const source = resolveSource();
   const voiceProfile = document.getElementById("voice-select").value;
   const exportH5p = document.getElementById("export-h5p").checked;
   const theme = document.querySelector(".theme-card.selected")?.dataset.theme || "chalk_board";
   const videoProfile = document.getElementById("video-profile-select").value;
-  const result = await window.pywebview.api.start_pipeline(source, voiceProfile, exportH5p, theme, videoProfile);
+  const githubContentKind = document.getElementById("github-content-kind").value;
+  const result = await window.pywebview.api.start_pipeline(
+    source, voiceProfile, exportH5p, theme, videoProfile, githubContentKind
+  );
   lastVideoPath = result.video_path;
   document.getElementById("result-video").src = result.video_path;
   goToStep(5);

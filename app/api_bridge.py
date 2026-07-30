@@ -84,18 +84,20 @@ class Api:
                          diagram_api_key=get_api_key("gemini"))
 
     def start_pipeline(self, source: dict[str, Any], voice_profile_name: str, export_h5p: bool,
-                        theme: str = "chalk_board", script_profile: str = DEFAULT_VIDEO_PROFILE) -> dict[str, Any]:
+                        theme: str = "chalk_board", script_profile: str = DEFAULT_VIDEO_PROFILE,
+                        github_content_kind: str | None = None) -> dict[str, Any]:
         text = normalize_source(source)
         profile = next((p for p in list_voice_profiles() if p.name == voice_profile_name), None)
         pipeline = self._build_pipeline(profile)
+        content_kind = github_content_kind if source.get("type") == "github" else None
 
         def on_progress(step: str, fraction: float) -> None:
             webview.windows[0].evaluate_js(
                 f"window.onPipelineProgress({step!r}, {fraction})"
             )
 
-        result = pipeline.run(text, profile, export_h5p, theme=theme,
-                               script_profile=script_profile, on_progress=on_progress)
+        result = pipeline.run(text, profile, export_h5p, theme=theme, script_profile=script_profile,
+                               github_content_kind=content_kind, on_progress=on_progress)
         self._current_project = result.project
         self._current_video_path = result.video_path
         self._current_voice_profile = profile

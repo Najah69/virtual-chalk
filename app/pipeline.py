@@ -48,10 +48,12 @@ class Pipeline:
 
     def generate_project(self, source_text: str, theme: str = "chalk_board",
                           script_profile: str = DEFAULT_VIDEO_PROFILE,
+                          github_content_kind: str | None = None,
                           on_progress: ProgressCallback = None) -> Project:
         if on_progress:
             on_progress("script", 0.0)
-        project = self.llm.generate_script(source_text, theme=theme, script_profile=script_profile)
+        project = self.llm.generate_script(source_text, theme=theme, script_profile=script_profile,
+                                            github_content_kind=github_content_kind)
         if on_progress:
             on_progress("script", 1.0)
         return project
@@ -131,8 +133,9 @@ class Pipeline:
 
     def run(self, source_text: str, voice_profile: VoiceProfile, export_h5p: bool,
             theme: str = "chalk_board", script_profile: str = DEFAULT_VIDEO_PROFILE,
+            github_content_kind: str | None = None,
             on_progress: ProgressCallback = None) -> PipelineResult:
-        project = self.generate_project(source_text, theme, script_profile, on_progress)
+        project = self.generate_project(source_text, theme, script_profile, github_content_kind, on_progress)
         self.generate_diagrams(project, on_progress)
         self.synthesize_voices(project, voice_profile, on_progress)
         video_path = self.render(project, on_progress)
