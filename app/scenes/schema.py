@@ -105,7 +105,7 @@ class Exercise:
     payload: dict[str, Any]
 
 
-def _strokes_from_visual_elements(elements: list[dict[str, Any]], theme: str) -> list[Stroke]:
+def strokes_from_visual_elements(elements: list[dict[str, Any]], theme: str) -> list[Stroke]:
     """Convertit les éléments visuels générés par le LLM (mots/courtes
     phrases ou icônes, positionnés en pourcentage du tableau) en Stroke.
     Le tracé réel (contour de lettres/icône) est calculé côté JS au rendu
@@ -198,7 +198,7 @@ class Project:
                 duration_sec=float(s.get("duration_sec", 10)),
                 visual_instruction=s.get("visual_instruction", ""),
                 notes=s.get("notes", ""),
-                strokes=_strokes_from_visual_elements(s.get("visual_elements", []), theme),
+                strokes=strokes_from_visual_elements(s.get("visual_elements", []), theme),
             )
             for s in data.get("script", [])
         ]

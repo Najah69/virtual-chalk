@@ -66,6 +66,10 @@ document.getElementById("btn-open-folder").addEventListener("click", () => {
   window.pywebview.api.open_output_folder();
 });
 
+document.getElementById("btn-edit").addEventListener("click", () => {
+  window.pywebview.api.open_editor();
+});
+
 // --- Étape 6 : exercices (mode simple) ---
 
 document.getElementById("btn-go-step6").addEventListener("click", async () => {

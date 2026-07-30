@@ -13,7 +13,7 @@ from app.render.diagram_generator import DIAGRAM_LINE_WIDTH, generate_diagram_po
 from app.render.ffmpeg_wrapper import concat_scenes
 from app.render.partial_render import render_all, render_scene
 from app.scenes.project_file import save_project_file
-from app.scenes.schema import Project
+from app.scenes.schema import Project, Scene
 from app.tts.base import TTSProvider, VoiceProfile
 
 logger = logging.getLogger(__name__)
@@ -95,13 +95,21 @@ class Pipeline:
             if on_progress:
                 on_progress("diagram", (i + 1) / len(pending))
 
+    def resynthesize_scene(self, scene: Scene, voice_profile: VoiceProfile) -> None:
+        """Re-synthétise la voix d'UNE scène (contrairement à
+        synthesize_voices, qui traite tout le projet) — utilisé par
+        l'édition NL (app/edit/nl_commands.py) et le mode brouillon/final,
+        pour ne payer/attendre que ce qui a réellement changé plutôt que de
+        rappeler le TTS sur des scènes inchangées."""
+        audio_path, duration = self.tts.synthesize(scene.voice_over, voice_profile)
+        scene.audio_path = str(audio_path)
+        scene.duration_sec = duration
+
     def synthesize_voices(self, project: Project, voice_profile: VoiceProfile,
                            on_progress: ProgressCallback = None) -> None:
         total = len(project.scenes)
         for i, scene in enumerate(project.scenes):
-            audio_path, duration = self.tts.synthesize(scene.voice_over, voice_profile)
-            scene.audio_path = str(audio_path)
-            scene.duration_sec = duration
+            self.resynthesize_scene(scene, voice_profile)
             if on_progress:
                 on_progress("voice", (i + 1) / total)
 

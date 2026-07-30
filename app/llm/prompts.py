@@ -1,6 +1,6 @@
 from app.scenes.schema import ANIMATION_NAMES, ICON_NAMES
 
-_ANIMATION_LIST = ", ".join(sorted(ANIMATION_NAMES))
+ANIMATION_LIST = ", ".join(sorted(ANIMATION_NAMES))
 
 # Regroupees par categorie plutot qu'en une liste alphabetique plate : un
 # LLM compose des schemas bien plus coherents quand il voit les icones
@@ -23,7 +23,7 @@ _ICON_GROUPS = {
         "building-bank", "users", "user", "coin", "scale",
     ],
 }
-_ICON_LIST = "\n".join(
+ICON_LIST = "\n".join(
     f"  - {group} : {', '.join(names)}" for group, names in _ICON_GROUPS.items()
 )
 
@@ -59,7 +59,7 @@ On te donne un document ou un prompt. Tu dois produire, en un seul passage :
   - icône (dessin statique) : {{"type": "icon", "name": "sun", "x": 50, "y": 30}}
     ("name" DOIT être choisi exactement dans cette liste, aucune autre
     valeur n'est acceptée. Icônes disponibles, par catégorie :
-{_ICON_LIST}
+{ICON_LIST}
     Aucune icône "rivière" ou "océan" n'existe explicitement : utilise
     "wave-sine" ou "ripple" pour un cours d'eau/courant, "anchor",
     "sailboat", "ship" ou "beach" pour évoquer mer/océan, "mountain"
@@ -68,7 +68,7 @@ On te donne un document ou un prompt. Tu dois produire, en un seul passage :
     rapport à une icône statique quand le concept implique un mouvement/
     processus — ex: la pluie qui tombe, plutôt qu'une simple icône de
     goutte immobile) : {{"type": "animation", "name": "falling_rain", "x": 50, "y": 30}}
-    ("name" DOIT être choisi exactement dans cette liste : {_ANIMATION_LIST})
+    ("name" DOIT être choisi exactement dans cette liste : {ANIMATION_LIST})
     N'ajoute JAMAIS l'icône statique "cloud-rain" dans une scène qui a déjà
     l'animation "falling_rain" (ou inversement) : ce sont deux façons de
     représenter la même chose (nuage + pluie), les combiner ne fait que

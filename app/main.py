@@ -1,22 +1,13 @@
 from __future__ import annotations
 
-import sys
-from pathlib import Path
-
 import webview
 
 from app.api_bridge import Api
+from app.paths import APP_DIR, UI_DIR
 from app.render.window_registry import set_render_window
 
-if getattr(sys, "frozen", False):
-    _BASE_DIR = Path(sys._MEIPASS)
-    _APP_DIR = _BASE_DIR / "app"
-else:
-    _APP_DIR = Path(__file__).resolve().parent
-    _BASE_DIR = _APP_DIR.parent
-
-UI_INDEX = _BASE_DIR / "ui" / "index.html"
-RENDER_TEMPLATE = _APP_DIR / "render" / "web_template" / "index.html"
+UI_INDEX = UI_DIR / "index.html"
+RENDER_TEMPLATE = APP_DIR / "render" / "web_template" / "index.html"
 
 
 def main() -> None:

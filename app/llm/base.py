@@ -18,7 +18,14 @@ class LLMProvider(ABC):
     def _complete(self, system_prompt: str, user_prompt: str) -> str:
         """Retourne la réponse brute (texte JSON) du modèle."""
 
+    def complete_json(self, system_prompt: str, user_prompt: str) -> dict:
+        """Primitive partagée : appel LLM + parsing JSON, sans hypothèse sur
+        le schéma de la réponse. Utilisée par generate_script (schéma
+        Project) et par app/edit/nl_commands.py (schéma actions d'édition) —
+        deux consommateurs différents du même appel brut."""
+        raw = self._complete(system_prompt, user_prompt)
+        return json.loads(raw)
+
     def generate_script(self, source_text: str, theme: str = "chalk_board") -> Project:
-        raw = self._complete(SYSTEM_PROMPT, build_user_prompt(source_text))
-        data = json.loads(raw)
+        data = self.complete_json(SYSTEM_PROMPT, build_user_prompt(source_text))
         return Project.from_llm_response(data, theme=theme)

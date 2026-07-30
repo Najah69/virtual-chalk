@@ -7,19 +7,26 @@ import webview
 
 import uuid
 
+from app.edit.nl_commands import apply_nl_edit_command
 from app.h5p.packager import build_h5p
 from app.ingestion.text_normalizer import normalize_source
 from app.llm.deepseek import DeepSeekProvider
 from app.llm.gemini import GeminiProvider
 from app.llm.openrouter import OpenRouterProvider
+from app.paths import UI_DIR
 from app.pipeline import Pipeline
-from app.scenes.project_file import load_project_file
+from app.scenes.project_file import load_project_file, save_project_file
 from app.scenes.schema import Exercise
 from app.settings import Settings, get_api_key
 from app.tts.base import TTSProvider, VoiceProfile
 from app.tts.gemini_tts import GeminiTTSProvider
 from app.tts.sapi_local import SapiLocalProvider
 from app.tts.voice_profiles import list_voice_profiles
+
+# Repli utilise quand aucun profil de voix n'a ete choisi dans cette session
+# (ex: projet charge depuis un .golpoproj sans etre repasse par
+# start_pipeline) — gratuit et local, jamais d'appel reseau surprise.
+_DEFAULT_VOICE_PROFILE = VoiceProfile(name="Voix Windows par défaut", provider="sapi_local")
 
 
 class Api:
@@ -29,6 +36,7 @@ class Api:
         self.settings = Settings.load()
         self._current_project = None
         self._current_video_path: Path | None = None
+        self._current_voice_profile: VoiceProfile | None = None
 
     def pick_file(self) -> str | None:
         result = webview.windows[0].create_file_dialog(
@@ -85,6 +93,7 @@ class Api:
         result = pipeline.run(text, profile, export_h5p, theme=theme, on_progress=on_progress)
         self._current_project = result.project
         self._current_video_path = result.video_path
+        self._current_voice_profile = profile
         return {
             "video_path": str(result.video_path),
             "h5p_path": str(result.h5p_path) if result.h5p_path else None,
@@ -141,3 +150,54 @@ class Api:
     def rerender_scene(self, scene_id: str) -> str:
         pipeline = self._build_pipeline()
         return str(pipeline.rerender_scene(self._current_project, scene_id))
+
+    def open_editor(self) -> None:
+        """Ouvre l'écran Éditeur (ui/editor/) dans une nouvelle fenêtre.
+        Le projet à charger n'est pas passé en query string sur l'URL
+        file:// (WebView2 échoue à la résoudre — testé, ERR_FILE_NOT_FOUND)
+        mais lu par editor.js via get_current_project_path() une fois la
+        fenêtre prête, comme le reste des échanges JS<->Python."""
+        if not self._current_project:
+            raise RuntimeError("Aucun projet à éditer")
+        editor_url = UI_DIR / "editor" / "editor.html"
+        webview.create_window("Virtual-Chalk — Éditeur", url=editor_url.as_uri(), js_api=self, width=1200, height=760)
+
+    def get_current_project_path(self) -> str | None:
+        if not self._current_project:
+            return None
+        return str(Path(self.settings.default_output_dir) / f"{self._current_project.slug}.golpoproj")
+
+    def apply_edit_command(self, command_text: str) -> dict[str, Any]:
+        """Traduit et applique une instruction d'édition en langage naturel
+        (app/edit/nl_commands.py), puis ne re-synthétise/re-rend que les
+        scènes réellement modifiées — pas de rappel LLM pour le script, pas
+        de re-rendu des scènes inchangées."""
+        if not self._current_project:
+            raise RuntimeError("Aucun projet à éditer")
+
+        pipeline = self._build_pipeline(self._current_voice_profile)
+        result = apply_nl_edit_command(self._current_project, command_text, pipeline.llm)
+        self._current_project = result.project
+
+        voice_profile = self._current_voice_profile or _DEFAULT_VOICE_PROFILE
+        for scene_id in result.voice_changed_scene_ids:
+            scene = next(s for s in self._current_project.scenes if s.scene_id == scene_id)
+            pipeline.resynthesize_scene(scene, voice_profile)
+
+        scenes_to_rerender = (
+            [s.scene_id for s in self._current_project.scenes]
+            if result.theme_changed
+            else result.changed_scene_ids
+        )
+        for scene_id in scenes_to_rerender:
+            pipeline.rerender_scene(self._current_project, scene_id)
+
+        project_path = Path(self.settings.default_output_dir) / f"{self._current_project.slug}.golpoproj"
+        save_project_file(self._current_project, project_path)
+
+        return {
+            "project": self._current_project.to_dict(),
+            "changed_scene_ids": result.changed_scene_ids,
+            "theme_changed": result.theme_changed,
+            "skipped_actions": result.skipped_actions,
+        }
