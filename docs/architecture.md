@@ -469,6 +469,35 @@ l'export). `h5p/bookmarks.py` génère automatiquement un bookmark par scène
 (titre + timestamp) pour qu'un utilisateur lambda obtienne une vidéo
 interactive utilisable sans configuration manuelle.
 
+## Organisation des fichiers de sortie
+
+Un dossier par projet, un sous-dossier par langue à l'intérieur —
+`{réglages.default_output_dir}/{slug}/{lang}/` (`fr` par défaut, `en` pour
+une traduction) contenant `video.mp4`, `video.h5p`, `project.golpoproj` et
+un sous-dossier `scenes/{scene_id}.mp4` (cache par scène, voir plus bas).
+`Pipeline.project_dir(slug, lang)` calcule/crée ce chemin ; toutes les
+autres méthodes (`render`, `export_h5p`, `rerender_scene`) reçoivent ce
+répertoire en paramètre plutôt que de le recalculer chacune de leur côté.
+Une traduction (`Api.export_translated`) écrit dans un sous-dossier de
+langue **frère** du dossier de la langue source (même dossier de projet,
+`.../{slug}/en/`) plutôt que dans un nouveau dossier dérivé du titre
+traduit — la version source n'est jamais modifiée.
+
+**Cache de rendu par scène et reconstruction du montage final** :
+`render_scene`/`render_all` (`app/render/partial_render.py`) écrivaient
+auparavant chaque scène dans un fichier temporaire jetable
+(`tempfile.mktemp`), et `render_all` ne retournait que les scènes dont le
+hash avait changé — recombiner ça dans un montage "final" après un
+re-rendu partiel aurait donc silencieusement perdu toutes les scènes
+inchangées. Chaque scène est maintenant rendue dans un emplacement stable
+(`{project_dir}/scenes/{scene_id}.mp4`) réutilisé comme cache ;
+`render_all` retourne toujours le chemin de **toutes** les scènes (en
+cache ou fraîchement rendues), donc le montage final reste complet.
+`Pipeline.rerender_scene` force le re-rendu d'une scène puis reconstruit
+la vidéo finale complète à partir de ce cache — avant ce correctif, le
+clip re-rendu n'était jamais réintégré au montage, qui restait donc
+périmé après une édition ciblée.
+
 ## Édition post-génération
 
 Écran Éditeur (`ui/editor/`) : liste des scènes, aperçu canvas live de la
@@ -502,10 +531,17 @@ thème inconnu) est journalisée et ignorée sans interrompre les autres.
 
 `Api.apply_edit_command` (`api_bridge.py`) orchestre la suite : ne
 re-synthétise (`Pipeline.resynthesize_scene`, scindée de
-`synthesize_voices` pour ne traiter qu'une scène) et ne re-rend
-(`Pipeline.rerender_scene`) que les scènes réellement touchées — sauf
-changement de thème, qui affecte le rendu de toutes les scènes (couleurs/
-outil dépendent du thème). Le `.golpoproj` est re-sauvegardé après coup.
+`synthesize_voices` pour ne traiter qu'une scène) que les scènes dont la
+voix a changé, puis appelle `Pipeline.render` une seule fois — basé sur le
+hash de contenu de chaque scène, il retrouve tout seul ce qui a réellement
+changé et réutilise le cache pour le reste (voir "Organisation des
+fichiers de sortie" plus haut), pas besoin de décider manuellement
+"toutes les scènes vs seulement les modifiées". `set_theme` recolore
+d'ailleurs maintenant les strokes existants avec la palette du nouveau
+thème (`_recolor_strokes_for_theme`) — sans ça, un stroke coloré blanc
+pour le tableau craie restait blanc après passage au tableau blanc feutre
+(texte invisible sur fond blanc), et surtout son hash ne changeait pas
+donc `render` l'aurait ignoré. Le `.golpoproj` est re-sauvegardé après coup.
 
 **Piège rencontré** : passer le chemin du `.golpoproj` à éditer en query
 string sur l'URL `file://...editor.html?project=...` échoue silencieusement
