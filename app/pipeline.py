@@ -29,6 +29,23 @@ class PipelineResult:
     h5p_path: Optional[Path]
 
 
+@dataclass
+class GenerationRequest:
+    """Regroupe les paramètres d'une génération initiale — évite de faire
+    grossir indéfiniment la signature de Pipeline.run()/generate_project()
+    à chaque nouvelle option (thème, profil, angle GitHub...). Les étapes
+    suivantes du pipeline (diagrammes, voix, rendu, export, édition NL)
+    continuent de prendre le Project directement : elles n'ont pas besoin
+    de ces paramètres d'entrée, seulement du résultat de generate_project()."""
+
+    source_text: str
+    voice_profile: VoiceProfile
+    theme: str = "chalk_board"
+    script_profile: str = DEFAULT_VIDEO_PROFILE
+    github_content_kind: str | None = None
+    export_h5p: bool = False
+
+
 class Pipeline:
     """Orchestre le flux complet : ingestion -> script -> voix -> rendu -> export.
 
@@ -46,14 +63,13 @@ class Pipeline:
         # logique que _build_tts pour la voix Gemini dans api_bridge.py.
         self.diagram_api_key = diagram_api_key
 
-    def generate_project(self, source_text: str, theme: str = "chalk_board",
-                          script_profile: str = DEFAULT_VIDEO_PROFILE,
-                          github_content_kind: str | None = None,
-                          on_progress: ProgressCallback = None) -> Project:
+    def generate_project(self, request: GenerationRequest, on_progress: ProgressCallback = None) -> Project:
         if on_progress:
             on_progress("script", 0.0)
-        project = self.llm.generate_script(source_text, theme=theme, script_profile=script_profile,
-                                            github_content_kind=github_content_kind)
+        project = self.llm.generate_script(
+            request.source_text, theme=request.theme, script_profile=request.script_profile,
+            github_content_kind=request.github_content_kind,
+        )
         if on_progress:
             on_progress("script", 1.0)
         return project
@@ -131,16 +147,13 @@ class Pipeline:
         build_h5p(video_path, bookmarks, h5p_path, interactions=interactions, exercise_types=exercise_types)
         return h5p_path
 
-    def run(self, source_text: str, voice_profile: VoiceProfile, export_h5p: bool,
-            theme: str = "chalk_board", script_profile: str = DEFAULT_VIDEO_PROFILE,
-            github_content_kind: str | None = None,
-            on_progress: ProgressCallback = None) -> PipelineResult:
-        project = self.generate_project(source_text, theme, script_profile, github_content_kind, on_progress)
+    def run(self, request: GenerationRequest, on_progress: ProgressCallback = None) -> PipelineResult:
+        project = self.generate_project(request, on_progress)
         self.generate_diagrams(project, on_progress)
-        self.synthesize_voices(project, voice_profile, on_progress)
+        self.synthesize_voices(project, request.voice_profile, on_progress)
         video_path = self.render(project, on_progress)
         save_project_file(project, self.output_dir / f"{project.slug}.golpoproj")
-        h5p_path = self.export_h5p(project, video_path) if export_h5p else None
+        h5p_path = self.export_h5p(project, video_path) if request.export_h5p else None
         return PipelineResult(project=project, video_path=video_path, h5p_path=h5p_path)
 
     def rerender_scene(self, project: Project, scene_id: str) -> Path:

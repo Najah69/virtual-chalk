@@ -267,6 +267,58 @@ gouttes différentes d'une frame à l'autre, gel correct après `end_sec`,
 et absence d'interférence avec un texte positionné ailleurs et apparu
 après le gel.
 
+### Diagrammes générés (image → vectorisation)
+
+Texte/icônes/animations ne suffisent pas à représenter un concept
+fondamentalement géométrique ou structurel (ex: un triangle rectangle pour
+le théorème de Pythagore). Plutôt que d'ajouter une primitive de forme par
+type de schéma rencontré (approche qui demanderait une itération de
+développeur à chaque nouveau domaine), `app/render/diagram_generator.py`
+délègue le "quoi dessiner" à un modèle de génération d'image (Gemini,
+`gemini-2.5-flash-image`), qui sait dessiner n'importe quel sujet dans
+n'importe quel domaine sans jamais avoir besoin d'être étendu :
+
+1. Le LLM du script pose un élément `{"type": "diagram", "description": "...", "x", "y", "width", "height"}`
+   dans `visual_elements` (au plus un par scène — voir consigne dans
+   `app/llm/prompts.py`, qui demande une description simple, 2 à 4 formes
+   de base, jamais de proportions exactes entre plusieurs formes : un
+   modèle d'image ne peut pas garantir cette précision).
+2. `app/scenes/schema.py::strokes_from_visual_elements` crée un `Stroke`
+   temporaire `kind="diagram"` dont `points` ne contient qu'un point
+   d'ancrage et `width`/`height` portent la taille du cadre réservé sur le
+   tableau (pas une épaisseur de trait — double sens temporaire, corrigé à
+   l'étape suivante).
+3. `Pipeline.generate_diagrams()` résout chaque stroke "diagram" : appelle
+   `generate_diagram_image()` (prompt forçant un style ligne fine N&B sans
+   texte/légende), puis `vectorize_diagram()` (OpenCV : Canny →
+   `findContours` → `approxPolyDP` pour limiter les points → recadrage sur
+   la bbox réelle des contours) pour obtenir une liste de `Point`
+   positionnés dans le cadre réservé, un sous-tracé par contour disjoint
+   (`penUp=True` en tête de chaque contour). Le stroke bascule alors en
+   `kind="shape"` et `width` est remis à `DIAGRAM_LINE_WIDTH` (épaisseur de
+   trait réelle, plus la taille du cadre) — sans ce reset, le moteur de
+   rendu tente de tracer un trait aussi épais que le cadre entier
+   (retour utilisateur : rendu comme un nuage de points diffus au lieu
+   d'un dessin nettement reconnaissable).
+4. Le stroke `"shape"` résultant est ensuite dessiné par `chalk.js`/
+   `marker_veleda.js` exactement comme n'importe quel autre tracé
+   multi-points — **aucune modification du moteur de rendu JS n'a été
+   nécessaire**, il savait déjà animer une liste de points arbitraire.
+
+**Robustesse** (générateur d'image non déterministe — un résultat peut
+être fragmenté ou contenir un résidu de texte malgré la consigne) :
+`_largest_contours` écarte les contours dont la longueur est minuscule par
+rapport au plus grand contour du même dessin (`_MIN_RELATIVE_ARC_LEN`,
+filtre les résidus de texte/artefacts sans dépendre de l'échelle absolue
+de l'image) ; si le résultat reste trop fragmenté après filtrage
+(`_MAX_PLAUSIBLE_CONTOURS`, plus de 8 contours distincts — un schéma
+simple en compte rarement davantage), `generate_diagram_points()` retente
+une seule génération et garde le résultat le moins fragmenté des deux.
+Sans clé API Gemini, en cas d'erreur réseau, ou si la vectorisation ne
+produit aucun contour exploitable, le diagramme est simplement retiré de
+la scène (`Pipeline.generate_diagrams`, `try/except` par diagramme) plutôt
+que de faire échouer toute la génération vidéo pour un seul schéma manqué.
+
 ### Sons de craie
 
 `app/render/chalk_audio.py` synthétise un pool de tapotements de craie
@@ -352,6 +404,62 @@ explicitement 2-3 phrases pour la première scène (accroche + annonce du
 sujet) et la dernière (récapitulatif + phrase de clôture), plutôt que le
 message clé unique attendu des scènes intermédiaires.
 
+## Profils de vidéo
+
+`app/llm/prompts.py::VIDEO_PROFILES` (`cours_magistral`, `fiche_revision`,
+`demo_produit`, `tutoriel`) ajuste le **ton et la structure** du script
+(nombre de scènes, présence ou non d'une intro/conclusion développée,
+type de scènes) sans toucher au vocabulaire visuel ni au format JSON de
+sortie — un seul appel LLM, une seule structure de sortie, seule la
+consigne narrative change. `SYSTEM_PROMPT` (constante figée) est devenu
+`build_system_prompt(script_profile)` pour permettre cette
+paramétrisation ; `LLMProvider.generate_script()` accepte `script_profile`
+(voir `GenerationRequest` plus bas). Sélectionné dans l'assistant UX à
+l'étape 3 (`ui/index.html`, `#video-profile-select`), à côté du thème et
+de la voix.
+
+Vérifié en opposant `cours_magistral` et `fiche_revision` sur le même
+sujet : 8 scènes de 250-350 caractères avec accroche/conclusion contre 5
+scènes de 110-135 caractères, directes, sans intro, avec étapes numérotées
+explicitement pour `tutoriel`.
+
+## Connecteur GitHub
+
+`app/ingestion/github.py::fetch_repo_text()` récupère le README
+(obligatoire, plusieurs orthographes/extensions essayées) et quelques
+fichiers de doc de premier niveau (`CHANGELOG.md`, `CONTRIBUTING.md`,
+`docs/README.md`) d'un dépôt public, à partir d'une URL `github.com` ou de
+la forme `owner/repo` — volontairement limité à ces fichiers de premier
+niveau plutôt qu'un crawl récursif de tout le dépôt, pour rester sobre et
+rapide. Branché dans `normalize_source` comme un type de source de plus
+(`text`/`file`/`url`/`github`), donc `Pipeline.run()` n'a besoin d'aucun
+code spécifique en aval.
+
+Le contenu brut d'un dépôt (README/CHANGELOG) ne dit pas lui-même sous
+quel angle le présenter, contrairement à un texte déjà rédigé pour un
+lecteur humain : `github_content_kind` (`architecture` / `installation` /
+`changelog`, choisi dans l'assistant à côté de l'URL du dépôt) ajoute une
+consigne d'angle au prompt utilisateur (`build_user_prompt`,
+`GITHUB_CONTENT_KINDS`) — même mécanisme que les profils de vidéo, une
+seule consigne textuelle en plus, aucun nouveau format de données.
+
+## API interne (`GenerationRequest`)
+
+`Pipeline.run()`/`generate_project()` ont grossi au fil des ajouts
+(thème, profil, angle GitHub...) jusqu'à une signature à 6-7 paramètres
+mélangeant obligatoires et optionnels sans regroupement logique.
+`GenerationRequest` (dataclass, `app/pipeline.py`) regroupe les
+paramètres d'une génération initiale (`source_text`, `voice_profile`,
+`theme`, `script_profile`, `github_content_kind`, `export_h5p`) en un seul
+objet passé à `Pipeline.run(request, on_progress=...)` — un seul endroit à
+étendre pour une future option plutôt que de rallonger la signature à
+chaque étape. Les étapes suivantes du pipeline (`generate_diagrams`,
+`synthesize_voices`, `render`, `export_h5p`, `rerender_scene`,
+`resynthesize_scene`) continuent de prendre le `Project` (ou une `Scene`)
+directement : elles n'ont pas besoin des paramètres d'entrée de la
+génération initiale, seulement de son résultat — regroupement volontaire
+limité à l'entrée du pipeline, pas une convention forcée partout.
+
 ## Export H5P (finalité du projet, pas une extension)
 
 `h5p/packager.py` construit `h5p.json` + `content/content.json` autour du
@@ -369,16 +477,53 @@ durée). Bouton "re-render cette scène" vs "re-render tout" —
 `render/partial_render.py` ne régénère que ce qui a changé (et ne rappelle
 le TTS que si le texte a changé).
 
+### Édition par langage naturel (NL Editing)
+
+Une barre de commande sous l'éditeur (`editor.js`) accepte une instruction
+en français libre ("raccourcis la scène 3 à 15 secondes", "remplace le
+thème par tableau blanc feutres", "supprime la dernière scène si elle ne
+contient qu'une conclusion répétitive"...). `app/edit/nl_commands.py`
+traduit cette instruction en une liste d'actions JSON structurées via **un
+seul appel LLM** (`EDIT_SYSTEM_PROMPT`, `app/edit/prompts.py`), à partir
+d'un vocabulaire fixe de 6 actions primitives (`update_scene_duration`,
+`set_theme`, `delete_scene`, `move_scene`, `insert_scene`,
+`replace_scene_content`) — jamais de régénération complète du script, pas
+de deuxième appel LLM même pour `insert_scene` (le contenu de la nouvelle
+scène est généré dans ce même appel de traduction).
+
+Le LLM reçoit un résumé compact des scènes existantes (index + extrait de
+la voix off, pas le script complet) pour résoudre lui-même les références
+par contenu ("la scène sur X", "la dernière scène") et évaluer les
+conditions ("supprime SI...") — une instruction ambiguë ou hors périmètre
+produit une liste d'actions vide plutôt qu'une action inventée.
+`apply_nl_edit_command` applique ensuite chaque action déterministiquement
+au `Project` ; une action individuelle invalide (index hors limites,
+thème inconnu) est journalisée et ignorée sans interrompre les autres.
+
+`Api.apply_edit_command` (`api_bridge.py`) orchestre la suite : ne
+re-synthétise (`Pipeline.resynthesize_scene`, scindée de
+`synthesize_voices` pour ne traiter qu'une scène) et ne re-rend
+(`Pipeline.rerender_scene`) que les scènes réellement touchées — sauf
+changement de thème, qui affecte le rendu de toutes les scènes (couleurs/
+outil dépendent du thème). Le `.golpoproj` est re-sauvegardé après coup.
+
+**Piège rencontré** : passer le chemin du `.golpoproj` à éditer en query
+string sur l'URL `file://...editor.html?project=...` échoue silencieusement
+sous WebView2 (`ERR_FILE_NOT_FOUND`) — corrigé en passant ce chemin par le
+pont JS↔Python existant (`Api.get_current_project_path()`, lu par
+`editor.js` une fois `pywebviewready` déclenché) plutôt que par l'URL.
+
 ## Arborescence
 
 ```
 app/
-  main.py, api_bridge.py, pipeline.py, settings.py
-  ingestion/      pdf_reader.py, docx_reader.py, url_reader.py, text_normalizer.py
+  main.py, api_bridge.py, pipeline.py, settings.py, paths.py
+  edit/           nl_commands.py, prompts.py (édition par langage naturel)
+  ingestion/      pdf_reader.py, docx_reader.py, url_reader.py, github.py, text_normalizer.py
   llm/            base.py, openrouter.py, gemini.py, prompts.py
   tts/            base.py, sapi_local.py, cloud_providers.py, voice_profiles.py
   scenes/         schema.py, project_store.py, project_file.py
-  render/         capture.py, ffmpeg_wrapper.py, partial_render.py
+  render/         capture.py, ffmpeg_wrapper.py, partial_render.py, diagram_generator.py
     web_template/ index.html, themes.js, text_to_path.js
       surfaces/   blackboard.js, greenboard.js, whiteboard.js
       tools/      chalk.js, marker_veleda.js
@@ -390,9 +535,17 @@ resources/        ffmpeg/, h5p_libraries/
 build/            pyinstaller.spec, installer.iss
 ```
 
-## Reporté (pas dans le v1)
+## Reporté
 
 - Interactions H5P avancées au-delà des bookmarks auto (pause, question) —
   extension naturelle de l'éditeur de scène plus tard.
 - Providers LLM/TTS/thèmes supplémentaires au-delà de ceux listés —
   l'abstraction est prête, ajouter un provider = une classe de plus.
+- Connecteurs "workflow" au-delà de GitHub (Jira, Calendar...) —
+  l'architecture reste extensible (un module `ingestion` par source, une
+  interface commune vers `source_text`), aucun besoin identifié pour
+  l'instant au-delà de GitHub.
+- Mode brouillon (voix SAPI gratuite) → finalisation (voix Gemini) et
+  export multilingue (FR/EN, arabe explicitement mis de côté — nécessite
+  RTL + police manuscrite arabe + shaping contextuel, un sous-chantier à
+  part) : prochaines étapes du plan v2, pas encore implémentées.

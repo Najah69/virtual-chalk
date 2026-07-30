@@ -15,7 +15,7 @@ from app.llm.gemini import GeminiProvider
 from app.llm.openrouter import OpenRouterProvider
 from app.llm.prompts import DEFAULT_VIDEO_PROFILE, VIDEO_PROFILES
 from app.paths import UI_DIR
-from app.pipeline import Pipeline
+from app.pipeline import GenerationRequest, Pipeline
 from app.scenes.project_file import load_project_file, save_project_file
 from app.scenes.schema import Exercise
 from app.settings import Settings, get_api_key
@@ -96,8 +96,11 @@ class Api:
                 f"window.onPipelineProgress({step!r}, {fraction})"
             )
 
-        result = pipeline.run(text, profile, export_h5p, theme=theme, script_profile=script_profile,
-                               github_content_kind=content_kind, on_progress=on_progress)
+        request = GenerationRequest(
+            source_text=text, voice_profile=profile, theme=theme, script_profile=script_profile,
+            github_content_kind=content_kind, export_h5p=export_h5p,
+        )
+        result = pipeline.run(request, on_progress=on_progress)
         self._current_project = result.project
         self._current_video_path = result.video_path
         self._current_voice_profile = profile
