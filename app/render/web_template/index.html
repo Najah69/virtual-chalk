@@ -20,6 +20,8 @@
   <script src="tools/marker_veleda.js"></script>
   <script src="opentype.min.js"></script>
   <script src="text_to_path.js"></script>
+  <script src="icon_paths.js"></script>
+  <script src="icon_to_path.js"></script>
   <script>
     const canvas = document.getElementById("stage");
     const ctx = canvas.getContext("2d");
@@ -40,6 +42,9 @@
         if (stroke.kind === "text" && stroke.text) {
           const anchor = stroke.points[0];
           stroke.points = window.textToPaths(stroke.text, anchor.x, anchor.y, stroke.width);
+        } else if (stroke.kind === "icon" && stroke.text) {
+          const anchor = stroke.points[0];
+          stroke.points = window.iconToPoints(stroke.text, anchor.x, anchor.y, stroke.width);
         }
         stroke._lastDrawnCount = 0;
       }

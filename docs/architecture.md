@@ -90,6 +90,24 @@ La police est chargée en XHR synchrone au chargement de la page de rendu
 car `responseType` ne peut pas être fixé sur une requête XHR synchrone).
 Repli sur un simple segment si le chargement échoue.
 
+### Icônes (illustrations)
+
+Le LLM ne génère pas que du texte : chaque scène mélange texte et icônes
+(`visual_elements` de type `"icon"`, `name` choisi dans un vocabulaire fixe
+— voir `ICON_NAMES` dans `app/scenes/schema.py`, dupliqué dans le prompt
+système `app/llm/prompts.py`). Une icône hors vocabulaire est simplement
+ignorée plutôt que de faire planter le rendu.
+
+Les tracés viennent de **Feather Icons** (MIT), convertis une fois pour
+toutes en points (même format que les contours de police : commandes
+M/L/C/Z aplaties, marqueur `penUp` entre sous-tracés) via un script Node
+utilisant `svgpath` pour gérer les commandes d'arc SVG (`A`, présentes
+dans plusieurs icônes) — voir `icon_paths.js` (généré, ne pas éditer à la
+main) et `icon_to_path.js` (mise à l'échelle/position au rendu, viewBox
+natif 24×24). Pour ajouter une icône : reproduire la procédure de
+conversion avec le nom voulu, copier le résultat dans `icon_paths.js`, et
+ajouter le nom à `ICON_NAMES` (Python) et à la liste du prompt.
+
 Chaque tracé d'une scène a son propre `start_sec`/`end_sec`, calculés côté
 Python (`app/render/timing.py`, répartition proportionnelle à la longueur
 du tracé) et simplement lus par le JS — les tracés s'écrivent l'un après

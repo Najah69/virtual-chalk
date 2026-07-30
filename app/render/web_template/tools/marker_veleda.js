@@ -8,9 +8,12 @@ window.TOOLS = window.TOOLS || {};
 // le début à chaque frame.
 window.TOOLS.marker_veleda = function drawStroke(ctx, stroke, progress) {
   const path = stroke.points;
-  // Le texte utilise stroke.width comme taille de police, pas comme
-  // épaisseur de trait (voir tools/chalk.js pour le même souci).
-  const penWidth = stroke.kind === "text" ? Math.max(4, stroke.width * 0.16) : stroke.width;
+  // Le texte/icône utilise stroke.width comme taille, pas comme épaisseur
+  // de trait (voir tools/chalk.js pour le même souci).
+  const penWidth =
+    stroke.kind === "text" ? Math.max(4, stroke.width * 0.16)
+    : stroke.kind === "icon" ? Math.max(4, stroke.width * 0.07)
+    : stroke.width;
   const visibleCount = Math.max(2, Math.floor(path.length * progress));
   const from = stroke._lastDrawnCount || 0;
   if (visibleCount <= from) return;

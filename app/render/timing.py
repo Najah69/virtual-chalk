@@ -11,6 +11,7 @@ from app.scenes.schema import Scene
 # régulièrement espacées d'une vraie vidéo générée).
 CHARS_PER_SECOND = 10.0
 SHAPE_UNITS_PER_SECOND = 400.0
+ICON_DRAW_SECONDS = 1.3
 MIN_DRAW_SECONDS = 0.6
 MAX_DRAW_SECONDS = 2.5
 
@@ -23,8 +24,13 @@ def _path_length(points) -> float:
 
 
 def _draw_duration(stroke) -> float:
+    # Comme pour le texte, une icône n'arrive ici qu'avec un point d'ancrage
+    # (le tracé réel n'est développé que côté JS) : _path_length donnerait
+    # toujours 1.0, on utilise donc une durée fixe raisonnable à la place.
     if stroke.kind == "text" and stroke.text:
         raw = len(stroke.text) / CHARS_PER_SECOND
+    elif stroke.kind == "icon":
+        raw = ICON_DRAW_SECONDS
     else:
         raw = _path_length(stroke.points) / SHAPE_UNITS_PER_SECOND
     return max(MIN_DRAW_SECONDS, min(MAX_DRAW_SECONDS, raw))

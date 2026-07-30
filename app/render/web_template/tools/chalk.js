@@ -31,10 +31,12 @@ function hashSeed(stroke) {
 function chalkPrecompute(stroke) {
   const rng = mulberry32(hashSeed(stroke));
   const path = stroke.points;
-  // Pour du texte, stroke.width est la taille de police (utilisée pour
-  // positionner/dimensionner les lettres), pas l'épaisseur du trait de
-  // craie.
-  const penWidth = stroke.kind === "text" ? Math.max(7, stroke.width * 0.22) : stroke.width;
+  // Pour du texte/icône, stroke.width est une taille (police ou icône),
+  // pas l'épaisseur du trait de craie.
+  const penWidth =
+    stroke.kind === "text" ? Math.max(7, stroke.width * 0.22)
+    : stroke.kind === "icon" ? Math.max(6, stroke.width * 0.09)
+    : stroke.width;
   const spacing = Math.max(1, penWidth * 0.4);
   const dabs = [];
 

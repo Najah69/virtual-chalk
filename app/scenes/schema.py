@@ -9,6 +9,16 @@ from app.render.theme_registry import palette_for_theme
 CANVAS_WIDTH = 1920
 CANVAS_HEIGHT = 1080
 TEXT_STROKE_WIDTH = 56.0
+ICON_SIZE = 220.0
+
+# Doit rester synchronisé avec les icônes réellement converties dans
+# app/render/web_template/icon_paths.js (voir docs/architecture.md pour
+# la procédure de conversion depuis Feather Icons).
+ICON_NAMES = {
+    "sun", "cloud", "cloud-rain", "droplet", "arrow-right", "arrow-up",
+    "arrow-down", "thermometer", "wind", "umbrella", "home", "book",
+    "check", "refresh-cw", "map-pin", "zap",
+}
 
 
 @dataclass
@@ -26,7 +36,7 @@ class Stroke:
     points: list[Point]
     color: str
     width: float
-    kind: Literal["text", "shape"] = "shape"
+    kind: Literal["text", "shape", "icon"] = "shape"
     text: str = ""
     start_sec: float = 0.0
     end_sec: float = 0.0
@@ -67,24 +77,29 @@ class Exercise:
 
 def _strokes_from_visual_elements(elements: list[dict[str, Any]], theme: str) -> list[Stroke]:
     """Convertit les éléments visuels générés par le LLM (mots/courtes
-    phrases positionnés en pourcentage du tableau) en Stroke de type texte.
-    Le tracé réel (contour de lettres) est calculé côté JS au rendu
-    (text_to_path.js) — ici on ne fixe que le point d'ancrage."""
+    phrases ou icônes, positionnés en pourcentage du tableau) en Stroke.
+    Le tracé réel (contour de lettres/icône) est calculé côté JS au rendu
+    (text_to_path.js / icon_to_path.js) — ici on ne fixe que le point
+    d'ancrage. Les icônes hors vocabulaire connu (ICON_NAMES) sont
+    ignorées plutôt que de planter le rendu sur une sortie LLM imprévue."""
     palette = palette_for_theme(theme)
     strokes = []
     for i, el in enumerate(elements):
-        content = str(el.get("content", "")).strip()
-        if el.get("type") != "text" or not content:
-            continue
+        el_type = el.get("type")
         x = (float(el.get("x", 50)) / 100.0) * CANVAS_WIDTH
         y = (float(el.get("y", 50)) / 100.0) * CANVAS_HEIGHT
-        strokes.append(Stroke(
-            points=[Point(x, y)],
-            color=palette[i % len(palette)],
-            width=TEXT_STROKE_WIDTH,
-            kind="text",
-            text=content,
-        ))
+        color = palette[i % len(palette)]
+
+        if el_type == "text":
+            content = str(el.get("content", "")).strip()
+            if not content:
+                continue
+            strokes.append(Stroke(points=[Point(x, y)], color=color, width=TEXT_STROKE_WIDTH, kind="text", text=content))
+        elif el_type == "icon":
+            name = str(el.get("name", "")).strip()
+            if name not in ICON_NAMES:
+                continue
+            strokes.append(Stroke(points=[Point(x, y)], color=color, width=ICON_SIZE, kind="icon", text=name))
     return strokes
 
 
