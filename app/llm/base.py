@@ -18,7 +18,7 @@ class LLMProvider(ABC):
     def _complete(self, system_prompt: str, user_prompt: str) -> str:
         """Retourne la réponse brute (texte JSON) du modèle."""
 
-    def generate_script(self, source_text: str) -> Project:
+    def generate_script(self, source_text: str, theme: str = "chalk_board") -> Project:
         raw = self._complete(SYSTEM_PROMPT, build_user_prompt(source_text))
         data = json.loads(raw)
-        return Project.from_llm_response(data)
+        return Project.from_llm_response(data, theme=theme)

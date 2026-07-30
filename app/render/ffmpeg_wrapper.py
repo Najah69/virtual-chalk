@@ -17,7 +17,7 @@ def encode_scene(frames_dir: Path, audio_path: Path, fps: int, out_path: Path,
     cmd = [
         _ffmpeg(), "-y",
         "-framerate", str(fps),
-        "-i", str(frames_dir / "frame_%05d.png"),
+        "-i", str(frames_dir / "frame_%05d.jpg"),
         "-i", str(audio_path),
     ]
 

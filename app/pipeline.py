@@ -36,10 +36,11 @@ class Pipeline:
         self.tts = tts
         self.output_dir = output_dir
 
-    def generate_project(self, source_text: str, on_progress: ProgressCallback = None) -> Project:
+    def generate_project(self, source_text: str, theme: str = "chalk_board",
+                          on_progress: ProgressCallback = None) -> Project:
         if on_progress:
             on_progress("script", 0.0)
-        project = self.llm.generate_script(source_text)
+        project = self.llm.generate_script(source_text, theme=theme)
         if on_progress:
             on_progress("script", 1.0)
         return project
@@ -69,8 +70,8 @@ class Pipeline:
         return h5p_path
 
     def run(self, source_text: str, voice_profile: VoiceProfile, export_h5p: bool,
-            on_progress: ProgressCallback = None) -> PipelineResult:
-        project = self.generate_project(source_text, on_progress)
+            theme: str = "chalk_board", on_progress: ProgressCallback = None) -> PipelineResult:
+        project = self.generate_project(source_text, theme, on_progress)
         self.synthesize_voices(project, voice_profile, on_progress)
         video_path = self.render(project, on_progress)
         save_project_file(project, self.output_dir / f"{project.slug}.golpoproj")

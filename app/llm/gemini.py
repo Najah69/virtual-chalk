@@ -11,7 +11,7 @@ GEMINI_URL_TEMPLATE = (
 
 class GeminiProvider(LLMProvider):
     def _complete(self, system_prompt: str, user_prompt: str) -> str:
-        model = self.model or "gemini-1.5-pro"
+        model = self.model or "gemini-2.5-pro"
         response = requests.post(
             GEMINI_URL_TEMPLATE.format(model=model),
             params={"key": self.api_key},

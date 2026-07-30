@@ -63,7 +63,8 @@ class Api:
         tts = SapiLocalProvider()
         return Pipeline(llm=llm, tts=tts, output_dir=Path(self.settings.default_output_dir))
 
-    def start_pipeline(self, source: dict[str, Any], voice_profile_name: str, export_h5p: bool) -> dict[str, Any]:
+    def start_pipeline(self, source: dict[str, Any], voice_profile_name: str, export_h5p: bool,
+                        theme: str = "chalk_board") -> dict[str, Any]:
         text = normalize_source(source)
         pipeline = self._build_pipeline()
         profile = next((p for p in list_voice_profiles() if p.name == voice_profile_name), None)
@@ -73,7 +74,7 @@ class Api:
                 f"window.onPipelineProgress({step!r}, {fraction})"
             )
 
-        result = pipeline.run(text, profile, export_h5p, on_progress=on_progress)
+        result = pipeline.run(text, profile, export_h5p, theme=theme, on_progress=on_progress)
         self._current_project = result.project
         self._current_video_path = result.video_path
         return {

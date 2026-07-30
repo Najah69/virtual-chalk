@@ -13,6 +13,13 @@ from app.scenes.schema import Scene
 FPS = 30
 TEMPLATE_URL = "web_template/index.html"
 
+# Nombre de frames rendues et capturées en un seul aller-retour JS<->Python.
+# Un evaluate_js par frame individuelle mesure ~300ms/frame (surcoût d'IPC,
+# pas de calcul) ; regrouper par lots ramène ce surcoût à une fraction de
+# ce qu'il serait sinon, sans pour autant faire transiter toute une scène
+# (plusieurs Mo de PNG en base64) en un seul appel.
+BATCH_SIZE = 30
+
 
 class FrameCapture:
     """Pilote une horloge virtuelle : demande au JS de dessiner l'état exact
@@ -33,13 +40,16 @@ class FrameCapture:
             f"window.loadScene({json.dumps(asdict(scene))}, {json.dumps(theme)})"
         )
 
-        for n in range(frame_count):
-            t = n / FPS
-            self.window.evaluate_js(f"window.renderAtTime({t})")
-            data_url = self.window.evaluate_js(
-                "document.getElementById('stage').toDataURL('image/png')"
+        n = 0
+        while n < frame_count:
+            batch = min(BATCH_SIZE, frame_count - n)
+            start_t = n / FPS
+            data_urls = self.window.evaluate_js(
+                f"window.renderFrames({start_t}, {batch}, {FPS})"
             )
-            png_bytes = base64.b64decode(data_url.split(",", 1)[1])
-            (out_dir / f"frame_{n:05d}.png").write_bytes(png_bytes)
+            for i, data_url in enumerate(data_urls):
+                jpg_bytes = base64.b64decode(data_url.split(",", 1)[1])
+                (out_dir / f"frame_{n + i:05d}.jpg").write_bytes(jpg_bytes)
+            n += batch
 
         return out_dir

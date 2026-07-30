@@ -55,7 +55,8 @@ document.getElementById("btn-go-step4").addEventListener("click", async () => {
   const source = { type: "text", value: document.getElementById("source-text").value };
   const voiceProfile = document.getElementById("voice-select").value;
   const exportH5p = document.getElementById("export-h5p").checked;
-  const result = await window.pywebview.api.start_pipeline(source, voiceProfile, exportH5p);
+  const theme = document.querySelector(".theme-card.selected")?.dataset.theme || "chalk_board";
+  const result = await window.pywebview.api.start_pipeline(source, voiceProfile, exportH5p, theme);
   lastVideoPath = result.video_path;
   document.getElementById("result-video").src = result.video_path;
   goToStep(5);

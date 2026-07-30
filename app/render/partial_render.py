@@ -5,13 +5,12 @@ import tempfile
 from pathlib import Path
 from typing import Callable, Optional
 
-import webview
-
 from app.render.capture import FPS, FrameCapture
 from app.render.chalk_audio import build_chalk_track
 from app.render.ffmpeg_wrapper import encode_scene
 from app.render.theme_registry import tool_for_theme
 from app.render.timing import compute_stroke_timings
+from app.render.window_registry import get_render_window
 from app.scenes.schema import Project, Scene
 
 ProgressCallback = Optional[Callable[[str, float], None]]
@@ -26,8 +25,7 @@ def render_scene(project: Project, scene_id: str) -> Path:
     scene = next(s for s in project.scenes if s.scene_id == scene_id)
     compute_stroke_timings(scene)
 
-    window = webview.windows[0]
-    capture = FrameCapture(window)
+    capture = FrameCapture(get_render_window())
     frames_dir = capture.render_scene_frames(scene, project.theme)
 
     chalk_audio_path = (

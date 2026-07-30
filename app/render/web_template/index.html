@@ -26,9 +26,18 @@
     let currentTheme = null;
 
     // Appelé par Python (FrameCapture) avant de rendre les frames d'une scène.
+    // Les strokes de type "texte" n'arrivent qu'avec un point d'ancrage
+    // (position) — on les développe ici en tracé dessinable, une seule fois
+    // par scène, pas à chaque frame.
     window.loadScene = function (scene, themeId) {
       currentScene = scene;
       currentTheme = window.getTheme(themeId);
+      for (const stroke of currentScene.strokes || []) {
+        if (stroke.kind === "text" && stroke.text) {
+          const anchor = stroke.points[0];
+          stroke.points = window.textToPaths(stroke.text, anchor.x, anchor.y, stroke.width);
+        }
+      }
     };
 
     // Appelé par Python pour chaque frame, avec le temps virtuel écoulé (s).
@@ -46,6 +55,22 @@
         const progress = Math.min(1, Math.max(0, (t - stroke.start_sec) / span));
         if (progress > 0) drawStroke(ctx, stroke, progress);
       }
+    };
+
+    // Rend et capture plusieurs frames en un seul aller-retour JS<->Python
+    // (au lieu d'un aller-retour par frame) : évite l'essentiel du surcoût
+    // d'IPC mesuré à ~300ms/frame avec l'approche "un evaluate_js par frame".
+    window.renderFrames = function (startT, count, fps) {
+      const results = [];
+      for (let i = 0; i < count; i++) {
+        window.renderAtTime(startT + i / fps);
+        // JPEG plutôt que PNG : les frames sont de toute façon ré-encodées
+        // en H.264 (avec perte) juste après par ffmpeg, et PNG est
+        // dramatiquement plus lourd sur une image texturée/bruitée (grain
+        // craie, fond tableau) car peu compressible sans perte.
+        results.push(canvas.toDataURL("image/jpeg", 0.9));
+      }
+      return results;
     };
   </script>
 </body>

@@ -5,8 +5,10 @@ from pathlib import Path
 import webview
 
 from app.api_bridge import Api
+from app.render.window_registry import set_render_window
 
 UI_INDEX = Path(__file__).resolve().parent.parent / "ui" / "index.html"
+RENDER_TEMPLATE = Path(__file__).resolve().parent / "render" / "web_template" / "index.html"
 
 
 def main() -> None:
@@ -19,6 +21,14 @@ def main() -> None:
         height=760,
         min_size=(900, 620),
     )
+    render_window = webview.create_window(
+        "Virtual-Chalk Render Surface",
+        url=str(RENDER_TEMPLATE),
+        width=1920,
+        height=1080,
+        hidden=True,
+    )
+    set_render_window(render_window)
     webview.start()
 
 

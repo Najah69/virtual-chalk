@@ -4,6 +4,12 @@ import re
 from dataclasses import asdict, dataclass, field
 from typing import Any, Literal
 
+from app.render.theme_registry import palette_for_theme
+
+CANVAS_WIDTH = 1920
+CANVAS_HEIGHT = 1080
+TEXT_STROKE_WIDTH = 56.0
+
 
 @dataclass
 class Point:
@@ -59,6 +65,29 @@ class Exercise:
     payload: dict[str, Any]
 
 
+def _strokes_from_visual_elements(elements: list[dict[str, Any]], theme: str) -> list[Stroke]:
+    """Convertit les éléments visuels générés par le LLM (mots/courtes
+    phrases positionnés en pourcentage du tableau) en Stroke de type texte.
+    Le tracé réel (contour de lettres) est calculé côté JS au rendu
+    (text_to_path.js) — ici on ne fixe que le point d'ancrage."""
+    palette = palette_for_theme(theme)
+    strokes = []
+    for i, el in enumerate(elements):
+        content = str(el.get("content", "")).strip()
+        if el.get("type") != "text" or not content:
+            continue
+        x = (float(el.get("x", 50)) / 100.0) * CANVAS_WIDTH
+        y = (float(el.get("y", 50)) / 100.0) * CANVAS_HEIGHT
+        strokes.append(Stroke(
+            points=[Point(x, y)],
+            color=palette[i % len(palette)],
+            width=TEXT_STROKE_WIDTH,
+            kind="text",
+            text=content,
+        ))
+    return strokes
+
+
 @dataclass
 class Project:
     title: str
@@ -85,7 +114,7 @@ class Project:
         return starts
 
     @classmethod
-    def from_llm_response(cls, data: dict[str, Any]) -> "Project":
+    def from_llm_response(cls, data: dict[str, Any], theme: str = "chalk_board") -> "Project":
         sections = [Section(**s) for s in data.get("sections", [])]
         scenes = [
             Scene(
@@ -94,11 +123,12 @@ class Project:
                 duration_sec=float(s.get("duration_sec", 10)),
                 visual_instruction=s.get("visual_instruction", ""),
                 notes=s.get("notes", ""),
+                strokes=_strokes_from_visual_elements(s.get("visual_elements", []), theme),
             )
             for s in data.get("script", [])
         ]
         title = (data.get("summary", "")[:60] or "Projet Virtual-Chalk").strip()
-        return cls(title=title, summary=data.get("summary", ""), sections=sections, scenes=scenes)
+        return cls(title=title, summary=data.get("summary", ""), sections=sections, scenes=scenes, theme=theme)
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)

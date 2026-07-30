@@ -1,20 +1,14 @@
-// Convertit un texte (police manuscrite) en tracés vectoriels (contours de
-// glyphes), pour que le texte soit dessiné avec le même moteur d'outil
-// (craie/feutre) que les formes libres.
+// Convertit un élément texte en tracé (points) dessinable par le moteur
+// craie/feutre. Placeholder volontairement simple : un segment horizontal
+// dont la longueur approxime la largeur du texte.
 //
-// TODO: intégrer une lib d'extraction de contours de police (ex. opentype.js)
-// pour remplacer ce placeholder qui simule un tracé rectiligne par lettre.
+// TODO: remplacer par un vrai contour de police (ex. opentype.js) pour un
+// rendu manuscrit fidèle — actuellement le texte apparaît comme une barre
+// texturée plutôt que des lettres, mais c'est déjà visible et positionné.
 window.textToPaths = function textToPaths(text, x, y, fontSize) {
-  const paths = [];
-  let cursorX = x;
-  for (const ch of text) {
-    if (ch !== " ") {
-      paths.push([
-        { x: cursorX, y: y },
-        { x: cursorX + fontSize * 0.5, y: y },
-      ]);
-    }
-    cursorX += fontSize * 0.6;
-  }
-  return paths;
+  const estimatedWidth = text.length * fontSize * 0.55;
+  return [
+    { x: x, y: y },
+    { x: x + estimatedWidth, y: y },
+  ];
 };
