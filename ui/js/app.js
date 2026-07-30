@@ -48,18 +48,127 @@ document.getElementById("btn-pick-file").addEventListener("click", async () => {
 document.getElementById("btn-go-step2").addEventListener("click", () => goToStep(2));
 document.getElementById("btn-go-step3").addEventListener("click", () => goToStep(3));
 
+let lastVideoPath = null;
+
 document.getElementById("btn-go-step4").addEventListener("click", async () => {
   goToStep(4);
   const source = { type: "text", value: document.getElementById("source-text").value };
   const voiceProfile = document.getElementById("voice-select").value;
   const exportH5p = document.getElementById("export-h5p").checked;
   const result = await window.pywebview.api.start_pipeline(source, voiceProfile, exportH5p);
+  lastVideoPath = result.video_path;
   document.getElementById("result-video").src = result.video_path;
   goToStep(5);
 });
 
 document.getElementById("btn-open-folder").addEventListener("click", () => {
   window.pywebview.api.open_output_folder();
+});
+
+// --- Étape 6 : exercices (mode simple) ---
+
+document.getElementById("btn-go-step6").addEventListener("click", async () => {
+  document.getElementById("exercise-video").src = lastVideoPath || "";
+  await refreshExerciseList();
+  goToStep(6);
+});
+
+document.getElementById("exercise-type").addEventListener("change", (e) => {
+  document.querySelectorAll(".exercise-type-fields").forEach((el) => (el.style.display = "none"));
+  document.getElementById(`exercise-fields-${e.target.value}`).style.display = "block";
+});
+
+document.getElementById("btn-use-current-time").addEventListener("click", () => {
+  const video = document.getElementById("exercise-video");
+  document.getElementById("exercise-time").value = video.currentTime.toFixed(1);
+});
+
+function addAnswerRow(text = "", correct = false) {
+  const row = document.createElement("div");
+  row.className = "mc-answer-row";
+  row.style.marginTop = "6px";
+  row.innerHTML = `
+    <input type="text" class="mc-answer-text" value="${text}" placeholder="Réponse" style="width:60%" />
+    <label><input type="checkbox" class="mc-answer-correct" ${correct ? "checked" : ""} /> Correcte</label>
+    <button type="button" class="secondary btn-remove-answer">✕</button>
+  `;
+  row.querySelector(".btn-remove-answer").addEventListener("click", () => row.remove());
+  document.getElementById("mc-answers").appendChild(row);
+}
+
+document.getElementById("btn-add-answer").addEventListener("click", () => addAnswerRow());
+addAnswerRow();
+addAnswerRow();
+
+function buildExercisePayload(type) {
+  if (type === "true_false") {
+    return {
+      question: document.getElementById("tf-question").value,
+      correct: document.querySelector('input[name="tf-correct"]:checked').value === "true",
+    };
+  }
+  if (type === "multi_choice") {
+    const answers = Array.from(document.querySelectorAll("#mc-answers .mc-answer-row")).map((row) => [
+      row.querySelector(".mc-answer-text").value,
+      row.querySelector(".mc-answer-correct").checked,
+    ]);
+    return { question: document.getElementById("mc-question").value, answers };
+  }
+  if (type === "blanks") {
+    return {
+      instruction: document.getElementById("blanks-instruction").value,
+      sentence: document.getElementById("blanks-sentence").value,
+    };
+  }
+  if (type === "drag_text") {
+    return {
+      instruction: document.getElementById("dt-instruction").value,
+      text: document.getElementById("dt-text").value,
+    };
+  }
+}
+
+document.getElementById("btn-add-exercise").addEventListener("click", async () => {
+  const type = document.getElementById("exercise-type").value;
+  const title = document.getElementById("exercise-title").value || "Exercice";
+  const time = parseFloat(document.getElementById("exercise-time").value || "0");
+  const payload = buildExercisePayload(type);
+
+  await window.pywebview.api.add_exercise(type, time, title, payload);
+  document.getElementById("exercise-title").value = "";
+  await refreshExerciseList();
+});
+
+const EXERCISE_TYPE_LABELS = {
+  true_false: "Vrai / Faux",
+  multi_choice: "QCM",
+  blanks: "Texte à trous",
+  drag_text: "Glisser les mots",
+};
+
+async function refreshExerciseList() {
+  const exercises = await window.pywebview.api.list_exercises();
+  const list = document.getElementById("exercise-list");
+  list.innerHTML = exercises
+    .map(
+      (ex) =>
+        `<li>${ex.time_sec.toFixed(1)}s — [${EXERCISE_TYPE_LABELS[ex.exercise_type]}] ${ex.title} ` +
+        `<button type="button" class="secondary btn-remove-exercise" data-id="${ex.exercise_id}">Supprimer</button></li>`
+    )
+    .join("");
+  list.querySelectorAll(".btn-remove-exercise").forEach((btn) => {
+    btn.addEventListener("click", async () => {
+      await window.pywebview.api.remove_exercise(btn.dataset.id);
+      await refreshExerciseList();
+    });
+  });
+}
+
+document.getElementById("btn-export-h5p-now").addEventListener("click", async () => {
+  const status = document.getElementById("export-h5p-status");
+  status.textContent = " Export en cours...";
+  const path = await window.pywebview.api.export_h5p_now();
+  status.textContent = ` Exporté : ${path}`;
 });
 
 window.addEventListener("pywebviewready", () => {

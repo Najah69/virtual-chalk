@@ -13,6 +13,7 @@
       <div class="step" data-step="3">3. Style &amp; voix</div>
       <div class="step" data-step="4">4. Génération</div>
       <div class="step" data-step="5">5. Résultat</div>
+      <div class="step" data-step="6">6. Exercices</div>
       <button class="secondary" id="btn-settings" style="margin-left:auto">Réglages</button>
     </nav>
 
@@ -59,7 +60,90 @@
       <div style="margin-top:16px">
         <button class="secondary" id="btn-open-folder">Ouvrir le dossier</button>
         <button class="secondary" id="btn-edit">Modifier la vidéo</button>
+        <button class="primary" id="btn-go-step6">Ajouter des exercices →</button>
       </div>
+    </section>
+
+    <section class="step-panel" data-step="6">
+      <h2>Exercices (mode simple)</h2>
+      <p>Placez des questions à des instants précis de la vidéo — elles seront intégrées au fichier .h5p pour Moodle.</p>
+
+      <video id="exercise-video" controls style="max-width:100%; max-height:280px"></video>
+
+      <div class="exercise-form" style="margin-top:16px">
+        <label style="display:block">
+          Type d'exercice
+          <select id="exercise-type">
+            <option value="true_false">Vrai / Faux</option>
+            <option value="multi_choice">QCM</option>
+            <option value="blanks">Texte à trous</option>
+            <option value="drag_text">Glisser les mots</option>
+          </select>
+        </label>
+
+        <label style="display:block; margin-top:10px">
+          Titre de l'exercice
+          <input type="text" id="exercise-title" style="width:100%" placeholder="Ex : Vérification concept clé" />
+        </label>
+
+        <label style="display:block; margin-top:10px">
+          Moment dans la vidéo (secondes)
+          <input type="number" id="exercise-time" min="0" step="0.5" style="width:120px" />
+          <button class="secondary" id="btn-use-current-time" type="button">Utiliser le temps actuel de la vidéo</button>
+        </label>
+
+        <div id="exercise-fields-true_false" class="exercise-type-fields">
+          <label style="display:block; margin-top:10px">
+            Question
+            <input type="text" id="tf-question" style="width:100%" />
+          </label>
+          <label style="display:block; margin-top:6px">
+            <input type="radio" name="tf-correct" value="true" checked /> Vrai
+          </label>
+          <label style="display:block">
+            <input type="radio" name="tf-correct" value="false" /> Faux
+          </label>
+        </div>
+
+        <div id="exercise-fields-multi_choice" class="exercise-type-fields" style="display:none">
+          <label style="display:block; margin-top:10px">
+            Question
+            <input type="text" id="mc-question" style="width:100%" />
+          </label>
+          <div id="mc-answers"></div>
+          <button class="secondary" id="btn-add-answer" type="button" style="margin-top:6px">+ Ajouter une réponse</button>
+        </div>
+
+        <div id="exercise-fields-blanks" class="exercise-type-fields" style="display:none">
+          <label style="display:block; margin-top:10px">
+            Consigne
+            <input type="text" id="blanks-instruction" style="width:100%" placeholder="Complétez la phrase." />
+          </label>
+          <label style="display:block; margin-top:6px">
+            Phrase (encadrez le(s) mot(s) à deviner par des astérisques, ex : Oslo est la capitale de la *Norvège*.)
+            <input type="text" id="blanks-sentence" style="width:100%" />
+          </label>
+        </div>
+
+        <div id="exercise-fields-drag_text" class="exercise-type-fields" style="display:none">
+          <label style="display:block; margin-top:10px">
+            Consigne
+            <input type="text" id="dt-instruction" style="width:100%" placeholder="Glissez les mots au bon endroit." />
+          </label>
+          <label style="display:block; margin-top:6px">
+            Texte (encadrez le(s) mot(s) à glisser par des astérisques)
+            <input type="text" id="dt-text" style="width:100%" />
+          </label>
+        </div>
+
+        <button class="primary" id="btn-add-exercise" style="margin-top:16px">Ajouter cet exercice</button>
+      </div>
+
+      <h3 style="margin-top:24px">Exercices ajoutés</h3>
+      <ul id="exercise-list"></ul>
+
+      <button class="primary" id="btn-export-h5p-now" style="margin-top:16px">Exporter le .h5p avec ces exercices</button>
+      <span id="export-h5p-status"></span>
     </section>
   </div>
 

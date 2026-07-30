@@ -1,0 +1,66 @@
+@CHARSET "UTF-8";
+
+.joubel-speech-bubble {
+  position: absolute;
+  color: #333;
+  z-index: 301;
+  margin-top: 0.45em;
+  min-width: 1em;
+  opacity: 0;
+  transition: opacity 0.5s ease;
+}
+.joubel-speech-bubble p {
+  margin: 0.75em 0;
+}
+.joubel-speech-bubble p:first-child {
+  margin-top: 0.25em;
+}
+.joubel-speech-bubble p:last-child {
+  margin-bottom: 0.25em;
+}
+.joubel-speech-bubble.show {
+  opacity: 1;
+}
+.joubel-speech-bubble-inner {
+  background: var(--h5p-theme-ui-base);
+  border: solid 1px var(--h5p-theme-stroke-1);
+  box-shadow: 0 0 0.5em #2c2c2c;
+  border-radius: var(--h5p-theme-border-radius-medium);
+  padding: 0.4rem 0.6rem;
+  text-align: left;
+  position: relative;
+  word-wrap: break-word; /* Long words have to break */
+  z-index: 1;
+  font-family: var(--h5p-theme-font-name);
+}
+.joubel-speech-bubble-inner-tail,
+.joubel-speech-bubble-tail {
+  position: absolute;
+  /* Setting these in pixels is intentional. We use it when calculating placement of bubble */
+  width: 12px;
+  height: 12px;
+  background: #fbfbfb;
+  transform: rotate(45deg);
+  z-index: -1;
+}
+.joubel-speech-bubble-tail {
+  box-shadow: 0 0 0.5em #2c2c2c;
+}
+
+.h5p-theme .joubel-speech-bubble-inner-tail {
+  z-index: 2;
+}
+
+.h5p-theme .joubel-speech-bubble-inner-tail,
+.h5p-theme .joubel-speech-bubble-tail {
+  background-color: var(--h5p-theme-ui-base);
+  border-left: solid 1px var(--h5p-theme-stroke-1);
+  border-top: solid 1px var(--h5p-theme-stroke-1);
+}
+
+.h5p-theme.joubel-speech-bubble-top {
+  .joubel-speech-bubble-inner-tail,
+  .joubel-speech-bubble-tail {
+    transform: rotate(225deg);
+  }
+}

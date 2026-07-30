@@ -5,6 +5,7 @@ from pathlib import Path
 from typing import Callable, Optional
 
 from app.h5p.bookmarks import generate_bookmarks
+from app.h5p.interactions import build_interaction
 from app.h5p.packager import build_h5p
 from app.llm.base import LLMProvider
 from app.render.ffmpeg_wrapper import concat_scenes
@@ -61,8 +62,10 @@ class Pipeline:
 
     def export_h5p(self, project: Project, video_path: Path) -> Path:
         bookmarks = generate_bookmarks(project.scenes)
+        interactions = [build_interaction(ex) for ex in project.exercises]
+        exercise_types = {ex.exercise_type for ex in project.exercises}
         h5p_path = self.output_dir / f"{project.slug}.h5p"
-        build_h5p(video_path, bookmarks, h5p_path)
+        build_h5p(video_path, bookmarks, h5p_path, interactions=interactions, exercise_types=exercise_types)
         return h5p_path
 
     def run(self, source_text: str, voice_profile: VoiceProfile, export_h5p: bool,

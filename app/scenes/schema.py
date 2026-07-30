@@ -45,17 +45,44 @@ class Section:
 
 
 @dataclass
+class Exercise:
+    """Un exercice H5P (QCM, vrai/faux, texte a trous, glisser les mots)
+    positionne a un instant du montage final. `payload` contient les
+    champs propres au type (voir app/h5p/interactions.py) ; `time_sec`
+    est le temps absolu dans la video concatenee finale, pas relatif a
+    une scene."""
+
+    exercise_id: str
+    exercise_type: Literal["true_false", "multi_choice", "blanks", "drag_text"]
+    time_sec: float
+    title: str
+    payload: dict[str, Any]
+
+
+@dataclass
 class Project:
     title: str
     summary: str
     sections: list[Section]
     scenes: list[Scene]
     theme: str = "chalk_board"
+    exercises: list[Exercise] = field(default_factory=list)
 
     @property
     def slug(self) -> str:
         base = re.sub(r"[^a-z0-9]+", "-", self.title.lower()).strip("-")
         return base or "virtual-chalk-project"
+
+    def scene_start_times(self) -> dict[str, float]:
+        """Instant absolu (dans la video concatenee finale) ou commence
+        chaque scene — utilise par l'UI pour convertir un point choisi
+        dans une scene en temps absolu pour un exercice."""
+        starts = {}
+        cursor = 0.0
+        for scene in self.scenes:
+            starts[scene.scene_id] = cursor
+            cursor += scene.duration_sec
+        return starts
 
     @classmethod
     def from_llm_response(cls, data: dict[str, Any]) -> "Project":
@@ -88,7 +115,8 @@ class Project:
                 for st in s.get("strokes", [])
             ]
             scenes.append(Scene(**{**s, "strokes": strokes}))
+        exercises = [Exercise(**ex) for ex in data.get("exercises", [])]
         return cls(
             title=data["title"], summary=data["summary"], sections=sections,
-            scenes=scenes, theme=data.get("theme", "chalk_board"),
+            scenes=scenes, theme=data.get("theme", "chalk_board"), exercises=exercises,
         )
