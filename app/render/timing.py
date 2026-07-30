@@ -2,6 +2,18 @@ from __future__ import annotations
 
 from app.scenes.schema import Scene
 
+# Rythme d'écriture volontairement rapide (comme un vrai enseignant qui
+# écrit un mot-clé, pas une révélation lente lettre par lettre) : le trait
+# se dessine vite puis reste statique le reste de son créneau, plutôt que
+# d'être étiré sur toute la durée de la scène — étirer un mot de 3 syllabes
+# sur 15 secondes fait qu'il reste inachevé/illisible pendant l'essentiel
+# du temps de visionnage (constaté à l'image en extrayant des frames
+# régulièrement espacées d'une vraie vidéo générée).
+CHARS_PER_SECOND = 10.0
+SHAPE_UNITS_PER_SECOND = 400.0
+MIN_DRAW_SECONDS = 0.6
+MAX_DRAW_SECONDS = 2.5
+
 
 def _path_length(points) -> float:
     length = 0.0
@@ -10,31 +22,28 @@ def _path_length(points) -> float:
     return max(length, 1.0)
 
 
-def _stroke_weight(stroke) -> float:
-    # Les tracés "texte" n'arrivent ici qu'avec un point d'ancrage — le
-    # tracé réel (contour des lettres) n'est développé que côté JS, après
-    # ce calcul. _path_length donnerait donc 1.0 pour tous les textes quelle
-    # que soit leur longueur (répartition égale, incorrecte). On utilise le
-    # nombre de caractères comme proxy du temps d'écriture à la place.
+def _draw_duration(stroke) -> float:
     if stroke.kind == "text" and stroke.text:
-        return max(len(stroke.text), 1)
-    return _path_length(stroke.points)
+        raw = len(stroke.text) / CHARS_PER_SECOND
+    else:
+        raw = _path_length(stroke.points) / SHAPE_UNITS_PER_SECOND
+    return max(MIN_DRAW_SECONDS, min(MAX_DRAW_SECONDS, raw))
 
 
 def compute_stroke_timings(scene: Scene) -> None:
-    """Répartit la durée de la scène entre ses tracés, proportionnellement à
-    leur longueur (ou leur nombre de caractères pour du texte), dessinés
-    séquentiellement (comme un vrai geste d'écriture) plutôt que tous en
-    même temps. Calculé côté Python pour rester la source de vérité unique
-    (le JS se contente de lire start_sec/end_sec, il ne recalcule rien)."""
+    """Répartit les tracés sur la durée de la scène : chacun démarre dans
+    un créneau égal (scene.duration_sec / nombre de tracés) pour apparaître
+    progressivement pendant la narration, mais se dessine à un rythme
+    d'écriture rapide et fixe plutôt que proportionnel à la durée
+    disponible — voir CHARS_PER_SECOND ci-dessus. Calculé côté Python pour
+    rester la source de vérité unique (le JS se contente de lire
+    start_sec/end_sec, il ne recalcule rien)."""
     strokes = scene.strokes
     if not strokes:
         return
-    weights = [_stroke_weight(s) for s in strokes]
-    total = sum(weights) or 1.0
-    cursor = 0.0
-    for stroke, weight in zip(strokes, weights):
-        span = (weight / total) * scene.duration_sec
-        stroke.start_sec = cursor
-        stroke.end_sec = cursor + span
-        cursor += span
+    slot = scene.duration_sec / len(strokes)
+    for i, stroke in enumerate(strokes):
+        slot_start = i * slot
+        duration = min(_draw_duration(stroke), slot)
+        stroke.start_sec = slot_start
+        stroke.end_sec = slot_start + duration
