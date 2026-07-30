@@ -98,6 +98,21 @@ document.getElementById("btn-edit").addEventListener("click", () => {
   window.pywebview.api.open_editor();
 });
 
+document.getElementById("btn-export-en").addEventListener("click", async () => {
+  const btn = document.getElementById("btn-export-en");
+  const status = document.getElementById("export-en-status");
+  btn.disabled = true;
+  status.textContent = " Traduction et re-génération en cours (peut prendre quelques minutes)...";
+  try {
+    const result = await window.pywebview.api.export_translated("en");
+    status.textContent = ` Exporté : ${result.video_path}`;
+  } catch (err) {
+    status.textContent = ` Erreur : ${err}`;
+  } finally {
+    btn.disabled = false;
+  }
+});
+
 // --- Étape 6 : exercices (mode simple) ---
 
 document.getElementById("btn-go-step6").addEventListener("click", async () => {

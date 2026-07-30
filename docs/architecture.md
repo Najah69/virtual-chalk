@@ -519,6 +519,7 @@ pont JS↔Python existant (`Api.get_current_project_path()`, lu par
 app/
   main.py, api_bridge.py, pipeline.py, settings.py, paths.py
   edit/           nl_commands.py, prompts.py (édition par langage naturel)
+  i18n/           translate.py (export multilingue)
   ingestion/      pdf_reader.py, docx_reader.py, url_reader.py, github.py, text_normalizer.py
   llm/            base.py, openrouter.py, gemini.py, prompts.py
   tts/            base.py, sapi_local.py, cloud_providers.py, voice_profiles.py
@@ -535,6 +536,43 @@ resources/        ffmpeg/, h5p_libraries/
 build/            pyinstaller.spec, installer.iss
 ```
 
+## Export multilingue (FR → EN)
+
+`app/i18n/translate.py::translate_project()` traduit un `Project` déjà
+généré vers une autre langue en **un seul appel LLM** : titre, résumé,
+voix off de chaque scène, texte affiché à la craie (`Stroke.text` pour
+`kind="text"`), et champs texte des exercices. Les icônes/animations/
+diagrammes (déjà résolus en tracé vectoriel, indépendants de la langue)
+sont copiés tels quels — jamais régénérés, ce qui éviterait un appel
+Gemini image-gen supplémentaire et produirait un dessin visuellement
+différent de la version source.
+
+`Api.export_translated(target_lang)` (bouton "Exporter aussi en anglais"
+sur l'écran Résultat, déclenché après validation de la version française)
+enchaîne : traduction → `Pipeline.synthesize_voices()` (re-synthèse
+complète dans la langue cible — la voix Gemini détecte la langue depuis
+le texte, aucun paramètre de langue explicite nécessaire côté TTS) →
+`Pipeline.render()` (re-rendu complet, les durées de scène changent avec
+la nouvelle voix) → `Pipeline.export_h5p()`. Fichiers de sortie nommés
+d'après le slug du titre traduit (`{slug-en}.mp4`/`.h5p`/`.golpoproj`),
+jamais de collision avec la version française qui reste inchangée.
+
+**Limite v1 assumée** : le texte traduit garde exactement la position de
+l'original (pas de recalcul d'anti-chevauchement `resolve_overlaps`) — un
+texte sensiblement plus long/court dans la langue cible peut
+occasionnellement chevaucher un élément voisin. Défaut cosmétique accepté
+pour rester simple ; correction possible via une commande NL Editing
+(`app/edit/nl_commands.py`) si ça s'avère gênant en pratique. Vérifié de
+bout en bout sur un projet réel (6 scènes, thème feutre) : traduction
+correcte, vidéo et .h5p produits, version française d'origine intacte.
+
+**Arabe explicitement reporté** : nécessiterait l'écriture de droite à
+gauche (le moteur de texte actuel — `text_to_path.js` + police Caveat —
+suppose du latin gauche-à-droite) et une police manuscrite arabe avec
+shaping contextuel (opentype.js le supporte en théorie si la police a les
+bonnes tables GSUB, non vérifié) — un sous-chantier à part entière plutôt
+qu'une simple langue de plus.
+
 ## Reporté
 
 - Interactions H5P avancées au-delà des bookmarks auto (pause, question) —
@@ -545,7 +583,8 @@ build/            pyinstaller.spec, installer.iss
   l'architecture reste extensible (un module `ingestion` par source, une
   interface commune vers `source_text`), aucun besoin identifié pour
   l'instant au-delà de GitHub.
-- Mode brouillon (voix SAPI gratuite) → finalisation (voix Gemini) et
-  export multilingue (FR/EN, arabe explicitement mis de côté — nécessite
-  RTL + police manuscrite arabe + shaping contextuel, un sous-chantier à
-  part) : prochaines étapes du plan v2, pas encore implémentées.
+- Export en arabe (voir ci-dessus).
+- Mode brouillon (voix SAPI gratuite) → finalisation (voix Gemini) :
+  écarté — le changement de voix implique des durées différentes donc un
+  re-rendu complet, jugé pas assez rentable par rapport à la simplicité de
+  choisir directement la voix voulue dès le départ.

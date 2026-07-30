@@ -9,6 +9,7 @@ import uuid
 
 from app.edit.nl_commands import apply_nl_edit_command
 from app.h5p.packager import build_h5p
+from app.i18n.translate import translate_project
 from app.ingestion.text_normalizer import normalize_source
 from app.llm.deepseek import DeepSeekProvider
 from app.llm.gemini import GeminiProvider
@@ -176,6 +177,33 @@ class Api:
         if not self._current_project:
             return None
         return str(Path(self.settings.default_output_dir) / f"{self._current_project.slug}.golpoproj")
+
+    def export_translated(self, target_lang: str) -> dict[str, Any]:
+        """Traduit le projet courant (app/i18n/translate.py) puis
+        re-synthétise la voix et re-rend entièrement dans la langue cible
+        — les icônes/animations/diagrammes ne sont pas régénérés (géométrie
+        indépendante de la langue). Le .golpoproj traduit est sauvegardé
+        séparément (slug différent, dérivé du titre traduit), la version
+        française d'origine n'est jamais modifiée."""
+        if not self._current_project:
+            raise RuntimeError("Aucun projet à traduire")
+
+        pipeline = self._build_pipeline(self._current_voice_profile)
+        voice_profile = self._current_voice_profile or _DEFAULT_VOICE_PROFILE
+
+        translated = translate_project(self._current_project, target_lang, pipeline.llm)
+        pipeline.synthesize_voices(translated, voice_profile)
+        video_path = pipeline.render(translated)
+        h5p_path = pipeline.export_h5p(translated, video_path)
+
+        project_path = Path(self.settings.default_output_dir) / f"{translated.slug}.golpoproj"
+        save_project_file(translated, project_path)
+
+        return {
+            "title": translated.title,
+            "video_path": str(video_path),
+            "h5p_path": str(h5p_path),
+        }
 
     def apply_edit_command(self, command_text: str) -> dict[str, Any]:
         """Traduit et applique une instruction d'édition en langage naturel
