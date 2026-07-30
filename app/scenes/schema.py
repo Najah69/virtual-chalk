@@ -22,6 +22,8 @@ class Stroke:
     width: float
     kind: Literal["text", "shape"] = "shape"
     text: str = ""
+    start_sec: float = 0.0
+    end_sec: float = 0.0
 
 
 @dataclass
@@ -81,7 +83,8 @@ class Project:
         for s in data.get("scenes", []):
             strokes = [
                 Stroke(points=[Point(**p) for p in st["points"]], color=st["color"],
-                       width=st["width"], kind=st.get("kind", "shape"), text=st.get("text", ""))
+                       width=st["width"], kind=st.get("kind", "shape"), text=st.get("text", ""),
+                       start_sec=st.get("start_sec", 0.0), end_sec=st.get("end_sec", 0.0))
                 for st in s.get("strokes", [])
             ]
             scenes.append(Scene(**{**s, "strokes": strokes}))

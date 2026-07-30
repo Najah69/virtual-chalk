@@ -8,7 +8,10 @@ from typing import Callable, Optional
 import webview
 
 from app.render.capture import FPS, FrameCapture
+from app.render.chalk_audio import build_chalk_track
 from app.render.ffmpeg_wrapper import encode_scene
+from app.render.theme_registry import tool_for_theme
+from app.render.timing import compute_stroke_timings
 from app.scenes.schema import Project, Scene
 
 ProgressCallback = Optional[Callable[[str, float], None]]
@@ -21,11 +24,18 @@ def _hash_scene(scene: Scene) -> str:
 
 def render_scene(project: Project, scene_id: str) -> Path:
     scene = next(s for s in project.scenes if s.scene_id == scene_id)
+    compute_stroke_timings(scene)
+
     window = webview.windows[0]
     capture = FrameCapture(window)
     frames_dir = capture.render_scene_frames(scene, project.theme)
+
+    chalk_audio_path = (
+        build_chalk_track(scene) if tool_for_theme(project.theme) == "chalk" else None
+    )
+
     out_path = Path(tempfile.mktemp(suffix=".mp4"))
-    encode_scene(frames_dir, Path(scene.audio_path), FPS, out_path)
+    encode_scene(frames_dir, Path(scene.audio_path), FPS, out_path, chalk_audio_path=chalk_audio_path)
     scene.content_hash = _hash_scene(scene)
     return out_path
 

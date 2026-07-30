@@ -12,6 +12,7 @@
   <canvas id="stage" width="1920" height="1080"></canvas>
 
   <script src="themes.js"></script>
+  <script src="surfaces/board_noise.js"></script>
   <script src="surfaces/blackboard.js"></script>
   <script src="surfaces/greenboard.js"></script>
   <script src="surfaces/whiteboard.js"></script>
@@ -31,15 +32,19 @@
     };
 
     // Appelé par Python pour chaque frame, avec le temps virtuel écoulé (s).
+    // start_sec/end_sec de chaque stroke sont calculés côté Python
+    // (app/render/timing.py) : le JS ne fait que les lire, pour que les
+    // tracés s'écrivent l'un après l'autre plutôt que tous en même temps.
     window.renderAtTime = function (t) {
       if (!currentScene || !currentTheme) return;
       const { width, height } = canvas;
       window.SURFACES[currentTheme.surface](ctx, width, height);
 
       const drawStroke = window.TOOLS[currentTheme.tool];
-      const progress = Math.min(1, t / currentScene.duration_sec);
       for (const stroke of currentScene.strokes || []) {
-        drawStroke(ctx, stroke.points, stroke.color, stroke.width, progress);
+        const span = Math.max(stroke.end_sec - stroke.start_sec, 0.0001);
+        const progress = Math.min(1, Math.max(0, (t - stroke.start_sec) / span));
+        if (progress > 0) drawStroke(ctx, stroke, progress);
       }
     };
   </script>

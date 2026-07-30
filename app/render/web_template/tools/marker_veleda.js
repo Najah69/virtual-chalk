@@ -1,12 +1,13 @@
 window.TOOLS = window.TOOLS || {};
 
 // Effet feutre Veleda : trait lisse et opaque, sans grain, léger effet
-// d'encre qui "pool" en début/fin de trait.
-window.TOOLS.marker_veleda = function drawStroke(ctx, path, color, width, progress) {
+// d'encre qui "pool" en début de trait.
+window.TOOLS.marker_veleda = function drawStroke(ctx, stroke, progress) {
+  const path = stroke.points;
   const visiblePoints = Math.max(2, Math.floor(path.length * progress));
   ctx.save();
-  ctx.strokeStyle = color;
-  ctx.lineWidth = width;
+  ctx.strokeStyle = stroke.color;
+  ctx.lineWidth = stroke.width;
   ctx.lineCap = "round";
   ctx.lineJoin = "round";
   ctx.globalAlpha = 0.95;
@@ -18,10 +19,9 @@ window.TOOLS.marker_veleda = function drawStroke(ctx, path, color, width, progre
   }
   ctx.stroke();
 
-  // Léger "pool" d'encre au point de départ
   ctx.beginPath();
-  ctx.arc(path[0].x, path[0].y, width * 0.6, 0, Math.PI * 2);
-  ctx.fillStyle = color;
+  ctx.arc(path[0].x, path[0].y, stroke.width * 0.6, 0, Math.PI * 2);
+  ctx.fillStyle = stroke.color;
   ctx.fill();
   ctx.restore();
 };

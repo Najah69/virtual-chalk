@@ -59,6 +59,34 @@ Ce qui est stocké/éditable reste vectoriel (liste de points, couleur,
 épaisseur) ; la texture (grain craie, brillance feutre) est une fonction
 pure appliquée au rendu, jamais figée dans les données.
 
+### Texture craie et séquencement (v1)
+
+Le trait de craie est un nuage de petits points ("stipple") tamponnés le
+long du tracé (`tools/chalk.js`), précalculé une fois par stroke et mis en
+cache dessus (`stroke._chalkDabs`) — recalculer avec `Math.random()` à
+chaque frame ferait scintiller la portion déjà tracée d'une image à
+l'autre, la craie posée ne doit pas changer d'aspect. Le bruit du fond de
+tableau (`surfaces/board_noise.js`) est mis en cache de la même façon.
+
+Chaque tracé d'une scène a son propre `start_sec`/`end_sec`, calculés côté
+Python (`app/render/timing.py`, répartition proportionnelle à la longueur
+du tracé) et simplement lus par le JS — les tracés s'écrivent l'un après
+l'autre (comme un vrai geste), pas tous en fondu simultané.
+
+### Sons de craie
+
+`app/render/chalk_audio.py` synthétise un pool de tapotements de craie
+(bruit filtré + enveloppe, procédural — aucun enregistrement réel
+disponible localement) et construit une piste audio dédiée par scène, avec
+un tapotement choisi aléatoirement à chaque déclenchement pour éviter la
+répétition, positionné au début de chaque tracé puis périodiquement pour
+les tracés longs. Cette piste est mixée sous la voix off au moment de
+l'encodage (`ffmpeg_wrapper.encode_scene`, filtre `amix` avec volume
+réduit sur la piste craie) — uniquement pour le thème craie, pas pour le
+thème feutre (`theme_registry.py`). Remplacer les sons synthétisés par de
+vrais enregistrements ne demande aucun changement de code (voir
+`resources/chalk_sounds/README.txt`).
+
 ## Fournisseurs pluggables (LLM / TTS)
 
 Même pattern d'abstraction pour les deux :

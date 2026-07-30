@@ -10,3 +10,4 @@ dist/
 .DS_Store
 Thumbs.db
 resources/ffmpeg/*.exe
+resources/chalk_sounds/*.wav
