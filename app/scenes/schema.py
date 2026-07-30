@@ -9,7 +9,7 @@ from app.render.theme_registry import palette_for_theme, semantic_color_for_icon
 
 CANVAS_WIDTH = 1920
 CANVAS_HEIGHT = 1080
-TEXT_STROKE_WIDTH = 56.0
+TEXT_STROKE_WIDTH = 90.0
 ICON_SIZE = 220.0
 
 # Doit rester synchronisé avec les icônes réellement converties dans

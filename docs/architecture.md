@@ -95,8 +95,16 @@ moteur de tampon craie ne relie pas ces sous-tracés par un trait parasite
 
 Le champ `Stroke.width` a un double sens selon `kind` : taille de police
 pour le texte (positionnement/échelle), épaisseur de trait réelle pour les
-formes — les outils appliquent un facteur réducteur (`width * 0.12` pour
-la craie, `* 0.1` pour le feutre) afin que le trait de lettre reste fin.
+formes — les outils appliquent un facteur réducteur (`width * 0.16` pour
+la craie comme pour le feutre) afin que le trait de lettre reste fin.
+
+`TEXT_STROKE_WIDTH` (`app/scenes/schema.py`) est la taille de police
+utilisée pour tout le texte, tous thèmes confondus — augmentée de 56 à 90
+(retour utilisateur : trop petit par rapport à la taille du tableau).
+Choisie après comparaison visuelle de plusieurs tailles (56 à 110) sur les
+deux thèmes : au-delà d'environ 100-110, le trait du feutre (qui s'épaissit
+proportionnellement, même facteur `* 0.16`) devient assez épais pour que
+les lettres commencent à se fondre entre elles.
 
 La police est chargée en XHR synchrone au chargement de la page de rendu
 (page servie par le mini-serveur HTTP local de pywebview, pas `file://` —
