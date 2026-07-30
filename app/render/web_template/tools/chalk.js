@@ -41,6 +41,15 @@ function chalkPrecompute(stroke) {
     stroke.kind === "text" ? Math.max(6, stroke.width * 0.16)
     : stroke.kind === "icon" ? Math.max(5, stroke.width * 0.07)
     : stroke.width;
+  // Le nuage de points est tamponné avec un rayon de dispersion aléatoire
+  // autour du tracé réel — trop large, il éloigne les dabs du contour de
+  // lettre exact et floute la forme (retour utilisateur : texte encore
+  // "pas totalement lisible" malgré le trait affiné). Resserré pour le
+  // texte spécifiquement (0.22 au lieu de 0.4) : les dabs restent proches
+  // du contour de police réel, la craie reste texturée sans brouiller la
+  // forme des lettres. Les icônes/formes gardent une dispersion plus
+  // large (0.4), qui ne pose pas ce problème de lisibilité fine.
+  const jitterFactor = stroke.kind === "text" ? 0.22 : 0.4;
   const spacing = Math.max(0.8, penWidth * 0.28);
   const dabs = [];
 
@@ -58,12 +67,12 @@ function chalkPrecompute(stroke) {
       const dots = [];
       for (let d = 0; d < dotCount; d++) {
         const angle = rng() * Math.PI * 2;
-        const r = rng() * penWidth * 0.4;
+        const r = rng() * penWidth * jitterFactor;
         dots.push({
           dx: Math.cos(angle) * r,
           dy: Math.sin(angle) * r,
           size: 0.25 + rng() * 0.55,
-          alpha: 0.45 + rng() * 0.4,
+          alpha: 0.55 + rng() * 0.35,
         });
       }
       dabs.push({ x: cx, y: cy, dots });

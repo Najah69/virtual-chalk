@@ -68,6 +68,20 @@ chaque frame ferait scintiller la portion déjà tracée d'une image à
 l'autre, la craie posée ne doit pas changer d'aspect. Le bruit du fond de
 tableau (`surfaces/board_noise.js`) est mis en cache de la même façon.
 
+Chaque dab est en réalité un tas de points dispersés aléatoirement autour
+du tracé (rayon = `penWidth * jitterFactor`) : au-delà d'un certain rayon,
+cette dispersion éloigne trop les points du contour de lettre réel et
+floute la forme au lieu de simplement la texturer — repéré sur du texte
+en minuscules cursives (les traits de liaison entre lettres, plus fins,
+sont plus sensibles à ce flou que les formes/icônes). `jitterFactor` est
+donc plus resserré pour le texte (0.22) que pour formes/icônes (0.4), qui
+n'ont pas ce problème de lisibilité fine. Vérifié en rendant du texte
+représentatif à travers la même chaîne de compression H.264 que la
+production (crf 18, `yuv420p` limited-range) plutôt qu'en jugeant sur une
+image brute non compressée — voir `marker_veleda.js` pour comparaison :
+le feutre dessine un trait plein lisse (`ctx.stroke()`), donc ce problème
+de dispersion ne le concerne pas.
+
 ### Texte manuscrit (contours réels)
 
 `text_to_path.js` extrait les vrais contours de lettres via **opentype.js**
