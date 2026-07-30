@@ -89,6 +89,16 @@ On te donne un document ou un prompt. Tu dois produire, en un seul passage :
     taille du tableau. N'utilise JAMAIS plus d'UN SEUL diagramme par scène
     (c'est déjà un élément visuel riche à lui seul) ; ne combine pas
     diagramme et icône pour représenter la même chose.
+    Le dessin est généré par un modèle d'image puis reconverti en tracé —
+    reste donc SIMPLE : 2 à 4 formes de base (segments, cercles, rectangles)
+    clairement séparées, jamais plus. N'exige JAMAIS de proportions ou
+    relations géométriques précises entre plusieurs formes (ex: "trois
+    carrés dont l'aire illustre a²+b²=c²", "respecter l'échelle exacte") —
+    un modèle d'image ne sait pas garantir cette précision et le résultat
+    devient un fouillis illisible ; contente-toi de décrire la forme
+    générale et les éléments clés (ex: pour Pythagore, un triangle
+    rectangle avec l'angle droit marqué et l'hypoténuse identifiée suffit,
+    laisse l'égalité a²+b²=c² au texte plutôt qu'au dessin).
   x et y sont des pourcentages de position sur le tableau (0 à 100 ;
   0,0 = coin haut-gauche, 100,100 = coin bas-droite). Espace les éléments
   pour qu'ils ne se chevauchent pas.
