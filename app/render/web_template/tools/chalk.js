@@ -24,20 +24,24 @@ function hashSeed(stroke) {
 // chaque frame ferait scintiller la portion déjà tracée d'une image à
 // l'autre — la craie ne doit pas changer d'aspect une fois posée.
 //
-// Le trait est volontairement dense/opaque (dabs rapprochés, alpha élevé) :
-// un rendu trop délicat ne survit pas à la compression vidéo H.264 sur un
-// fond texturé — testé, un premier réglage plus fin/pâle devenait quasi
-// invisible une fois la vidéo encodée.
+// Le trait reste opaque (alpha élevé, pour survivre à la compression
+// H.264 — voir commit precedent) mais le grain est fin et dense : des
+// points nombreux et petits, resserrés autour du tracé, plutôt que peu de
+// gros points épars. Un grain trop gros par rapport à l'épaisseur du
+// trait donne un aspect "zoomé"/grossier, en particulier sur du texte
+// (retour utilisateur : lettres floues/grossières, comme "méga-zoomées").
 function chalkPrecompute(stroke) {
   const rng = mulberry32(hashSeed(stroke));
   const path = stroke.points;
   // Pour du texte/icône, stroke.width est une taille (police ou icône),
-  // pas l'épaisseur du trait de craie.
+  // pas l'épaisseur du trait de craie — trait plus fin qu'avant (0.16/0.07
+  // au lieu de 0.22/0.09) pour un rendu plus délicat, proche d'un vrai
+  // trait de craie plutôt qu'un feutre épais.
   const penWidth =
-    stroke.kind === "text" ? Math.max(7, stroke.width * 0.22)
-    : stroke.kind === "icon" ? Math.max(6, stroke.width * 0.09)
+    stroke.kind === "text" ? Math.max(6, stroke.width * 0.16)
+    : stroke.kind === "icon" ? Math.max(5, stroke.width * 0.07)
     : stroke.width;
-  const spacing = Math.max(1, penWidth * 0.4);
+  const spacing = Math.max(0.8, penWidth * 0.28);
   const dabs = [];
 
   for (let i = 1; i < path.length; i++) {
@@ -50,15 +54,15 @@ function chalkPrecompute(stroke) {
       const frac = s / steps;
       const cx = a.x + (b.x - a.x) * frac;
       const cy = a.y + (b.y - a.y) * frac;
-      const dotCount = 6 + Math.floor(rng() * 4);
+      const dotCount = 9 + Math.floor(rng() * 5);
       const dots = [];
       for (let d = 0; d < dotCount; d++) {
         const angle = rng() * Math.PI * 2;
-        const r = rng() * penWidth * 0.45;
+        const r = rng() * penWidth * 0.4;
         dots.push({
           dx: Math.cos(angle) * r,
           dy: Math.sin(angle) * r,
-          size: 0.6 + rng() * 1.3,
+          size: 0.25 + rng() * 0.55,
           alpha: 0.45 + rng() * 0.4,
         });
       }
