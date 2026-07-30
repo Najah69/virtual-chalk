@@ -280,10 +280,46 @@ Même pattern d'abstraction pour les deux :
 - `llm/base.py` : interface `LLMProvider.generate_script(text)`.
   Implémentations prévues : OpenRouter, Gemini Pro. Un seul appel par script.
 - `tts/base.py` : interface `TTSProvider.synthesize(text, voice_profile)`.
-  Par défaut : voix locale Windows (SAPI5 / pyttsx3), gratuite et hors-ligne.
-  Profils de voix sauvegardés (`tts/voice_profiles.py`) réutilisables entre
-  projets. Clonage de voix = uniquement via provider cloud (impossible
-  correctement en local sur machine modeste), option opt-in explicite.
+  Par défaut historique : voix locale Windows (SAPI5 / pyttsx3), gratuite
+  et hors-ligne — mais qualité jugée insuffisante par l'utilisateur une
+  fois le reste (visuel, texte, timing) mis au niveau attendu. Profils de
+  voix sauvegardés (`tts/voice_profiles.py`) réutilisables entre projets.
+  Clonage de voix = uniquement via provider cloud (impossible correctement
+  en local sur machine modeste), option opt-in explicite.
+
+### Voix Gemini (cloud, payant, voix par défaut actuelle)
+
+`tts/gemini_tts.py` (`GeminiTTSProvider`) appelle le même endpoint
+`generateContent` que la génération de script (`llm/gemini.py`), avec
+`generationConfig.responseModalities: ["AUDIO"]` et
+`speechConfig.voiceConfig.prebuiltVoiceConfig.voiceName`. Une seule clé
+API Gemini sert donc aux deux usages (script + voix). La langue n'est pas
+un paramètre explicite : le modèle la détecte depuis le texte envoyé, la
+même voix ("Sulafat" par défaut, choisie pour son caractère "Warm"/
+chaleureux adapté à un ton d'enseignant) fonctionne donc pour du français
+comme n'importe quelle autre langue.
+
+L'API renvoie du PCM brut 24kHz mono 16 bits en base64 (`candidates[0]
+.content.parts[0].inlineData.data`), pas un fichier conteneur — il faut
+reconstruire un WAV soi-même (`wave.open` en écriture) pour que
+`wave.open` en lecture (mesure de la durée réelle dans
+`Pipeline.synthesize_voices`) et ffmpeg puissent le lire ensuite.
+
+**Dispatch du provider TTS** : `api_bridge.py::_build_tts` choisit
+`GeminiTTSProvider` ou `SapiLocalProvider` selon `VoiceProfile.provider`
+("gemini_tts" ou "sapi_local") — corrige au passage un oubli antérieur où
+`_build_pipeline` construisait toujours `SapiLocalProvider()` en dur, sans
+jamais regarder le profil sélectionné par l'utilisateur dans l'assistant.
+
+**Clé API** : stockée dans le trousseau Windows (`settings.get_api_key
+("gemini")`, chemin normal) avec repli sur la variable d'environnement
+utilisateur persistante `Gemini_Key_Virtual-Chalk` si le trousseau est
+vide — l'utilisateur tient les deux à jour en parallèle.
+
+OpenRouter propose aussi un endpoint TTS (`/api/v1/audio/speech`,
+compatible OpenAI Audio Speech) avec des voix Google/OpenAI/Mistral — non
+retenu ici : le crédit payant a été alloué spécifiquement sur la clé
+Gemini, et l'appel direct à l'API Gemini évite un intermédiaire.
 
 ## Rythme de l'intro/conclusion (pas un bug de rendu)
 

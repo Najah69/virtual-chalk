@@ -8,7 +8,7 @@ from pathlib import Path
 @dataclass
 class VoiceProfile:
     name: str
-    provider: str  # "sapi_local" | "cloud_clone" | "cloud_standard"
+    provider: str  # "sapi_local" | "gemini_tts" | "cloud_clone" | "cloud_standard"
     voice_id: str = ""
     config: dict | None = None
 

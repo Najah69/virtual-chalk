@@ -16,6 +16,8 @@ from app.pipeline import Pipeline
 from app.scenes.project_file import load_project_file
 from app.scenes.schema import Exercise
 from app.settings import Settings, get_api_key
+from app.tts.base import TTSProvider, VoiceProfile
+from app.tts.gemini_tts import GeminiTTSProvider
 from app.tts.sapi_local import SapiLocalProvider
 from app.tts.voice_profiles import list_voice_profiles
 
@@ -56,18 +58,23 @@ class Api:
         "deepseek": DeepSeekProvider,
     }
 
-    def _build_pipeline(self) -> Pipeline:
+    def _build_tts(self, voice_profile: VoiceProfile | None) -> TTSProvider:
+        if voice_profile and voice_profile.provider == "gemini_tts":
+            return GeminiTTSProvider(api_key=get_api_key("gemini") or "")
+        return SapiLocalProvider()
+
+    def _build_pipeline(self, voice_profile: VoiceProfile | None = None) -> Pipeline:
         provider_key = get_api_key(self.settings.llm_provider) or ""
         provider_cls = self.LLM_PROVIDERS.get(self.settings.llm_provider, OpenRouterProvider)
         llm = provider_cls(api_key=provider_key, model=self.settings.llm_model)
-        tts = SapiLocalProvider()
+        tts = self._build_tts(voice_profile)
         return Pipeline(llm=llm, tts=tts, output_dir=Path(self.settings.default_output_dir))
 
     def start_pipeline(self, source: dict[str, Any], voice_profile_name: str, export_h5p: bool,
                         theme: str = "chalk_board") -> dict[str, Any]:
         text = normalize_source(source)
-        pipeline = self._build_pipeline()
         profile = next((p for p in list_voice_profiles() if p.name == voice_profile_name), None)
+        pipeline = self._build_pipeline(profile)
 
         def on_progress(step: str, fraction: float) -> None:
             webview.windows[0].evaluate_js(

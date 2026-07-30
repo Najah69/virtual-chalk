@@ -44,7 +44,16 @@ class Settings:
 
 
 def get_api_key(provider: str) -> str | None:
-    return keyring.get_password(KEYRING_SERVICE, provider)
+    key = keyring.get_password(KEYRING_SERVICE, provider)
+    if key:
+        return key
+    # Repli sur la variable d'environnement Windows persistante que
+    # l'utilisateur a demandé de tenir à jour en parallèle du trousseau
+    # (Gemini_Key_Virtual-Chalk) : le trousseau reste la source normale,
+    # ceci ne sert que si son entrée a été effacée/perdue.
+    if provider == "gemini":
+        return os.environ.get("Gemini_Key_Virtual-Chalk")
+    return None
 
 
 def set_api_key(provider: str, api_key: str) -> None:

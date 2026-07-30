@@ -13,9 +13,16 @@ def _profiles_path():
 
 
 def list_voice_profiles() -> list[VoiceProfile]:
+    """Le premier profil de la liste est celui sélectionné par défaut dans
+    l'assistant (ui/js/app.js prend la première <option>) — la voix Gemini
+    passe donc en tête maintenant qu'une clé API pérenne est configurée,
+    la voix Windows locale restant disponible en repli gratuit/hors-ligne."""
     path = _profiles_path()
     if not path.exists():
-        return [VoiceProfile(name="Voix Windows par défaut", provider="sapi_local")]
+        return [
+            VoiceProfile(name="Voix Gemini (Sulafat, chaleureuse)", provider="gemini_tts", voice_id="Sulafat"),
+            VoiceProfile(name="Voix Windows par défaut", provider="sapi_local"),
+        ]
     data = json.loads(path.read_text(encoding="utf-8"))
     return [VoiceProfile(**item) for item in data]
 

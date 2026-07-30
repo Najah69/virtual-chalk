@@ -11,7 +11,14 @@ GEMINI_URL_TEMPLATE = (
 
 class GeminiProvider(LLMProvider):
     def _complete(self, system_prompt: str, user_prompt: str) -> str:
-        model = self.model or "gemini-2.5-pro"
+        # "gemini-2.5-pro"/"gemini-2.5-flash" renvoient 404 ("no longer
+        # available to new users") sur une clé API créée récemment, alors
+        # même que /v1beta/models les liste encore comme disponibles côté
+        # ListModels — repéré en configurant une clé neuve. L'alias
+        # "-latest" pointe vers le modèle flash recommandé du moment côté
+        # Google, ce qui évite de re-subir cette dépréciation silencieuse
+        # à chaque nouvelle génération de modèles.
+        model = self.model or "gemini-flash-latest"
         response = requests.post(
             GEMINI_URL_TEMPLATE.format(model=model),
             params={"key": self.api_key},
