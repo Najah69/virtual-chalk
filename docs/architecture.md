@@ -177,6 +177,40 @@ Deux couleurs (terre brune, pour chalk_board et whiteboard_marker) ont été
 ajoutées aux palettes de thème pour permettre ce mapping — elles entrent
 aussi dans la rotation classique, ce qui ajoute au passage de la variété.
 
+### Disposition (éviter les chevauchements texte/dessin)
+
+Retour utilisateur : le texte peut empiéter sur une icône ou une
+animation — un professeur qui écrit/dessine réellement au tableau ne fait
+jamais ça, il laisse implicitement de la place. Le prompt système demande
+bien au LLM d'espacer les éléments, mais celui-ci choisit x/y en
+pourcentage sans connaître les dimensions réelles de ce qu'il place : la
+largeur d'un texte dépend de son contenu, l'emprise d'une icône/animation
+de sa taille — rien ne garantissait donc l'absence de chevauchement.
+
+`app/render/layout.py` (`resolve_overlaps`) calcule une boîte englobante
+approximative par élément — les ancrages ne sont pas homogènes entre
+types (texte = ligne de base à gauche comme `opentype.getPath`, icône =
+coin haut-gauche, animation = coin haut-gauche mais avec une hauteur
+`size * 1.7` pour couvrir l'excursion verticale des gouttes qui tombent,
+voir `animations.js`) — puis écarte itérativement toute paire dont les
+boîtes se chevauchent, en poussant du minimum nécessaire le long de l'axe
+qui coûte le moins de déplacement. Appelé depuis
+`_strokes_from_visual_elements` (`app/scenes/schema.py`) juste avant de
+figer les `Stroke`, donc en aval du choix de position du LLM : son
+intention de composition (voir prompts.py) est conservée, seules les
+collisions sont corrigées.
+
+Recadrer un élément dans les limites du tableau après coup peut le
+repousser dans un voisin déjà séparé (repéré sur un cas de test avec
+plusieurs éléments serrés en haut de tableau) : `resolve_overlaps`
+alterne donc plusieurs rounds de [séparation par paires] puis
+[recadrage], plutôt qu'un recadrage final unique. Un cas dégénéré
+(plusieurs éléments à coordonnées exactement identiques, ce qui ne
+devrait plus arriver en pratique — voir la consigne anti-doublon
+icône/animation ci-dessus) peut ne pas converger à zéro chevauchement ;
+des positions réalistes issues du LLM convergent proprement en quelques
+itérations.
+
 ### Animations (mouvement réel)
 
 Contrairement au texte/icônes (révélés progressivement puis figés pour

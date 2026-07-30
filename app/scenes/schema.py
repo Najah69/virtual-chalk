@@ -4,6 +4,7 @@ import re
 from dataclasses import asdict, dataclass, field
 from typing import Any, Literal
 
+from app.render.layout import resolve_overlaps
 from app.render.theme_registry import palette_for_theme, semantic_color_for_icon
 
 CANVAS_WIDTH = 1920
@@ -97,9 +98,16 @@ def _strokes_from_visual_elements(elements: list[dict[str, Any]], theme: str) ->
     Le tracé réel (contour de lettres/icône) est calculé côté JS au rendu
     (text_to_path.js / icon_to_path.js) — ici on ne fixe que le point
     d'ancrage. Les icônes hors vocabulaire connu (ICON_NAMES) sont
-    ignorées plutôt que de planter le rendu sur une sortie LLM imprévue."""
+    ignorées plutôt que de planter le rendu sur une sortie LLM imprévue.
+
+    Le LLM choisit x/y en pourcentage sans connaître les dimensions
+    réelles de ce qu'il place (largeur du texte selon son contenu,
+    empreinte d'une icône/animation) : rien ne garantit qu'un texte ne
+    recouvre pas un dessin, ce qu'un professeur ne fait jamais au tableau.
+    `resolve_overlaps` écarte donc les éléments dont la boîte englobante
+    se chevauche avant de figer leur position finale dans les Stroke."""
     palette = palette_for_theme(theme)
-    strokes = []
+    planned: list[dict[str, Any]] = []
     for i, el in enumerate(elements):
         el_type = el.get("type")
         x = (float(el.get("x", 50)) / 100.0) * CANVAS_WIDTH
@@ -110,20 +118,27 @@ def _strokes_from_visual_elements(elements: list[dict[str, Any]], theme: str) ->
             content = str(el.get("content", "")).strip()
             if not content:
                 continue
-            strokes.append(Stroke(points=[Point(x, y)], color=color, width=TEXT_STROKE_WIDTH, kind="text", text=content))
+            planned.append({"kind": "text", "x": x, "y": y, "size": TEXT_STROKE_WIDTH, "content": content, "name": "", "color": color})
         elif el_type == "icon":
             name = str(el.get("name", "")).strip()
             if name not in ICON_NAMES:
                 continue
             icon_color = semantic_color_for_icon(name, theme) or color
-            strokes.append(Stroke(points=[Point(x, y)], color=icon_color, width=ICON_SIZE, kind="icon", text=name))
+            planned.append({"kind": "icon", "x": x, "y": y, "size": ICON_SIZE, "content": "", "name": name, "color": icon_color})
         elif el_type == "animation":
             name = str(el.get("name", "")).strip()
             if name not in ANIMATION_NAMES:
                 continue
             anim_color = semantic_color_for_icon(name, theme) or color
-            strokes.append(Stroke(points=[Point(x, y)], color=anim_color, width=ANIMATION_SIZE, kind="animation", text=name))
-    return strokes
+            planned.append({"kind": "animation", "x": x, "y": y, "size": ANIMATION_SIZE, "content": "", "name": name, "color": anim_color})
+
+    resolve_overlaps(planned, CANVAS_WIDTH, CANVAS_HEIGHT)
+
+    return [
+        Stroke(points=[Point(el["x"], el["y"])], color=el["color"], width=el["size"],
+               kind=el["kind"], text=el["content"] if el["kind"] == "text" else el["name"])
+        for el in planned
+    ]
 
 
 @dataclass
