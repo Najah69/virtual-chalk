@@ -68,6 +68,28 @@ chaque frame ferait scintiller la portion déjà tracée d'une image à
 l'autre, la craie posée ne doit pas changer d'aspect. Le bruit du fond de
 tableau (`surfaces/board_noise.js`) est mis en cache de la même façon.
 
+### Texte manuscrit (contours réels)
+
+`text_to_path.js` extrait les vrais contours de lettres via **opentype.js**
+(vendorisé en `opentype.min.js`, bundle navigateur) appliqués à une police
+manuscrite libre (**Caveat**, licence OFL, `fonts/Caveat.ttf` +
+`fonts/OFL.txt`). Les commandes de tracé (M/L/C/Q/Z, avec courbes de
+Bézier) sont aplaties en points, avec un marqueur `penUp` entre chaque
+sous-tracé (lettres séparées, boucles fermées d'un "o"/"e"...) pour que le
+moteur de tampon craie ne relie pas ces sous-tracés par un trait parasite
+— `chalkPrecompute` et `marker_veleda.js` respectent ce marqueur.
+
+Le champ `Stroke.width` a un double sens selon `kind` : taille de police
+pour le texte (positionnement/échelle), épaisseur de trait réelle pour les
+formes — les outils appliquent un facteur réducteur (`width * 0.12` pour
+la craie, `* 0.1` pour le feutre) afin que le trait de lettre reste fin.
+
+La police est chargée en XHR synchrone au chargement de la page de rendu
+(page servie par le mini-serveur HTTP local de pywebview, pas `file://` —
+`overrideMimeType('text/plain; charset=x-user-defined')` est nécessaire
+car `responseType` ne peut pas être fixé sur une requête XHR synchrone).
+Repli sur un simple segment si le chargement échoue.
+
 Chaque tracé d'une scène a son propre `start_sec`/`end_sec`, calculés côté
 Python (`app/render/timing.py`, répartition proportionnelle à la longueur
 du tracé) et simplement lus par le JS — les tracés s'écrivent l'un après

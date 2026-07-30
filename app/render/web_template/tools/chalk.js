@@ -26,12 +26,18 @@ function hashSeed(stroke) {
 function chalkPrecompute(stroke) {
   const rng = mulberry32(hashSeed(stroke));
   const path = stroke.points;
-  const spacing = Math.max(1.5, stroke.width * 0.35);
+  // Pour du texte, stroke.width est la taille de police (utilisée pour
+  // positionner/dimensionner les lettres), pas l'épaisseur du trait de
+  // craie — un trait de lettre doit rester fin, sans quoi les contours de
+  // lettres deviennent illisibles (blob épais au lieu d'un tracé net).
+  const penWidth = stroke.kind === "text" ? Math.max(4, stroke.width * 0.12) : stroke.width;
+  const spacing = Math.max(1.2, penWidth * 0.6);
   const dabs = [];
 
   for (let i = 1; i < path.length; i++) {
     const a = path[i - 1];
     const b = path[i];
+    if (a.penUp || b.penUp) continue; // ne relie pas deux sous-tracés (lettres/boucles distinctes)
     const segLen = Math.hypot(b.x - a.x, b.y - a.y);
     const steps = Math.max(1, Math.round(segLen / spacing));
     for (let s = 0; s < steps; s++) {
@@ -42,7 +48,7 @@ function chalkPrecompute(stroke) {
       const dots = [];
       for (let d = 0; d < dotCount; d++) {
         const angle = rng() * Math.PI * 2;
-        const r = rng() * stroke.width * 0.5;
+        const r = rng() * penWidth * 0.5;
         dots.push({
           dx: Math.cos(angle) * r,
           dy: Math.sin(angle) * r,
