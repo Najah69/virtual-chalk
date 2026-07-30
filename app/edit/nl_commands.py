@@ -21,6 +21,7 @@ from dataclasses import dataclass, field
 
 from app.edit.prompts import EDIT_SYSTEM_PROMPT, build_edit_user_prompt
 from app.llm.base import LLMProvider
+from app.render.theme_registry import palette_for_theme, semantic_color_for_icon
 from app.scenes.schema import Project, Scene, strokes_from_visual_elements
 
 logger = logging.getLogger(__name__)
@@ -74,11 +75,27 @@ def _apply_update_scene_duration(project: Project, action: dict, result: EditRes
     result.voice_changed_scene_ids.append(scene.scene_id)
 
 
+def _recolor_strokes_for_theme(project: Project, theme: str) -> None:
+    """La couleur d'un stroke est figée à la génération d'après la palette
+    du thème d'ALORS (voir strokes_from_visual_elements) — sans ce
+    recalcul, changer de thème via set_theme laisserait des strokes avec
+    la couleur de l'ancien thème (ex: blanc, valide sur fond vert craie,
+    devient du texte blanc invisible sur fond blanc feutre)."""
+    palette = palette_for_theme(theme)
+    for scene in project.scenes:
+        for i, stroke in enumerate(scene.strokes):
+            if stroke.kind in ("icon", "animation"):
+                stroke.color = semantic_color_for_icon(stroke.text, theme) or palette[i % len(palette)]
+            else:
+                stroke.color = palette[i % len(palette)]
+
+
 def _apply_set_theme(project: Project, action: dict, result: EditResult) -> None:
     theme = str(action["theme"])
     if theme not in VALID_THEMES:
         raise EditCommandError(f"theme inconnu : {theme!r}")
     project.theme = theme
+    _recolor_strokes_for_theme(project, theme)
     result.theme_changed = True
 
 

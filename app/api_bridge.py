@@ -37,6 +37,7 @@ class Api:
     def __init__(self):
         self.settings = Settings.load()
         self._current_project = None
+        self._current_project_dir: Path | None = None
         self._current_video_path: Path | None = None
         self._current_voice_profile: VoiceProfile | None = None
 
@@ -103,6 +104,7 @@ class Api:
         )
         result = pipeline.run(request, on_progress=on_progress)
         self._current_project = result.project
+        self._current_project_dir = result.project_dir
         self._current_video_path = result.video_path
         self._current_voice_profile = profile
         return {
@@ -140,27 +142,35 @@ class Api:
         from app.h5p.bookmarks import generate_bookmarks
         from app.h5p.interactions import build_interaction
 
+        if not self._current_project or not self._current_project_dir:
+            raise RuntimeError("Aucun projet à exporter")
         project = self._current_project
         bookmarks = generate_bookmarks(project.scenes)
         interactions = [build_interaction(ex) for ex in project.exercises]
         exercise_types = {ex.exercise_type for ex in project.exercises}
-        h5p_path = Path(self.settings.default_output_dir) / f"{project.slug}.h5p"
+        h5p_path = self._current_project_dir / "video.h5p"
         build_h5p(self._current_video_path, bookmarks, h5p_path,
                   interactions=interactions, exercise_types=exercise_types)
         return str(h5p_path)
 
     def open_output_folder(self) -> None:
         import subprocess
-        subprocess.Popen(["explorer", self.settings.default_output_dir])
+        folder = str(self._current_project_dir) if self._current_project_dir else self.settings.default_output_dir
+        subprocess.Popen(["explorer", folder])
 
     def load_project(self, path: str) -> dict[str, Any]:
         project = load_project_file(Path(path))
         self._current_project = project
+        self._current_project_dir = Path(path).parent
         return project.to_dict()
 
     def rerender_scene(self, scene_id: str) -> str:
-        pipeline = self._build_pipeline()
-        return str(pipeline.rerender_scene(self._current_project, scene_id))
+        if not self._current_project or not self._current_project_dir:
+            raise RuntimeError("Aucun projet à re-rendre")
+        pipeline = self._build_pipeline(self._current_voice_profile)
+        video_path = pipeline.rerender_scene(self._current_project, scene_id, self._current_project_dir)
+        self._current_video_path = video_path
+        return str(video_path)
 
     def open_editor(self) -> None:
         """Ouvre l'écran Éditeur (ui/editor/) dans une nouvelle fenêtre.
@@ -174,18 +184,20 @@ class Api:
         webview.create_window("Virtual-Chalk — Éditeur", url=editor_url.as_uri(), js_api=self, width=1200, height=760)
 
     def get_current_project_path(self) -> str | None:
-        if not self._current_project:
+        if not self._current_project_dir:
             return None
-        return str(Path(self.settings.default_output_dir) / f"{self._current_project.slug}.golpoproj")
+        return str(self._current_project_dir / "project.golpoproj")
 
     def export_translated(self, target_lang: str) -> dict[str, Any]:
         """Traduit le projet courant (app/i18n/translate.py) puis
         re-synthétise la voix et re-rend entièrement dans la langue cible
         — les icônes/animations/diagrammes ne sont pas régénérés (géométrie
-        indépendante de la langue). Le .golpoproj traduit est sauvegardé
-        séparément (slug différent, dérivé du titre traduit), la version
-        française d'origine n'est jamais modifiée."""
-        if not self._current_project:
+        indépendante de la langue). Écrit dans un sous-dossier de langue
+        SIBLING (`{dossier du projet}/{target_lang}/`, même dossier de
+        projet que l'original, ex: `.../mon-projet/en/`) plutôt que dans un
+        nouveau dossier basé sur le titre traduit — la version française
+        d'origine n'est jamais modifiée."""
+        if not self._current_project or not self._current_project_dir:
             raise RuntimeError("Aucun projet à traduire")
 
         pipeline = self._build_pipeline(self._current_voice_profile)
@@ -193,11 +205,12 @@ class Api:
 
         translated = translate_project(self._current_project, target_lang, pipeline.llm)
         pipeline.synthesize_voices(translated, voice_profile)
-        video_path = pipeline.render(translated)
-        h5p_path = pipeline.export_h5p(translated, video_path)
 
-        project_path = Path(self.settings.default_output_dir) / f"{translated.slug}.golpoproj"
-        save_project_file(translated, project_path)
+        out_dir = self._current_project_dir.parent / target_lang
+        out_dir.mkdir(parents=True, exist_ok=True)
+        video_path = pipeline.render(translated, out_dir)
+        h5p_path = pipeline.export_h5p(translated, video_path, out_dir)
+        save_project_file(translated, out_dir / "project.golpoproj")
 
         return {
             "title": translated.title,
@@ -207,10 +220,15 @@ class Api:
 
     def apply_edit_command(self, command_text: str) -> dict[str, Any]:
         """Traduit et applique une instruction d'édition en langage naturel
-        (app/edit/nl_commands.py), puis ne re-synthétise/re-rend que les
-        scènes réellement modifiées — pas de rappel LLM pour le script, pas
-        de re-rendu des scènes inchangées."""
-        if not self._current_project:
+        (app/edit/nl_commands.py), puis ne re-synthétise que les scènes
+        dont la voix a réellement changé. Le rendu final passe par
+        Pipeline.render (basé sur le hash de contenu de chaque scène) plutôt
+        que de décider nous-mêmes quelles scènes re-rendre : un changement
+        de thème recolore désormais aussi les strokes existants
+        (voir _recolor_strokes_for_theme), donc leur hash change comme
+        n'importe quelle autre édition — render() retrouve tout seul quoi
+        re-rendre et réutilise le cache pour le reste."""
+        if not self._current_project or not self._current_project_dir:
             raise RuntimeError("Aucun projet à éditer")
 
         pipeline = self._build_pipeline(self._current_voice_profile)
@@ -222,16 +240,10 @@ class Api:
             scene = next(s for s in self._current_project.scenes if s.scene_id == scene_id)
             pipeline.resynthesize_scene(scene, voice_profile)
 
-        scenes_to_rerender = (
-            [s.scene_id for s in self._current_project.scenes]
-            if result.theme_changed
-            else result.changed_scene_ids
-        )
-        for scene_id in scenes_to_rerender:
-            pipeline.rerender_scene(self._current_project, scene_id)
+        if result.changed_scene_ids or result.theme_changed:
+            self._current_video_path = pipeline.render(self._current_project, self._current_project_dir)
 
-        project_path = Path(self.settings.default_output_dir) / f"{self._current_project.slug}.golpoproj"
-        save_project_file(self._current_project, project_path)
+        save_project_file(self._current_project, self._current_project_dir / "project.golpoproj")
 
         return {
             "project": self._current_project.to_dict(),

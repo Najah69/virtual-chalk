@@ -22,9 +22,13 @@ logger = logging.getLogger(__name__)
 ProgressCallback = Optional[Callable[[str, float], None]]
 
 
+DEFAULT_LANGUAGE = "fr"
+
+
 @dataclass
 class PipelineResult:
     project: Project
+    project_dir: Path
     video_path: Path
     h5p_path: Optional[Path]
 
@@ -133,17 +137,27 @@ class Pipeline:
             if on_progress:
                 on_progress("voice", (i + 1) / total)
 
-    def render(self, project: Project, on_progress: ProgressCallback = None) -> Path:
-        scene_videos = render_all(project, on_progress=on_progress)
-        final_path = self.output_dir / f"{project.slug}.mp4"
+    def project_dir(self, slug: str, lang: str = DEFAULT_LANGUAGE) -> Path:
+        """Répertoire de sortie d'un projet pour une langue donnée : un
+        dossier par projet, un sous-dossier par langue à l'intérieur
+        (`{output_dir}/{slug}/{lang}/`) — évite que toutes les vidéos
+        générées (et leurs traductions) se retrouvent mélangées à plat
+        dans un seul dossier."""
+        path = self.output_dir / slug / lang
+        path.mkdir(parents=True, exist_ok=True)
+        return path
+
+    def render(self, project: Project, out_dir: Path, on_progress: ProgressCallback = None) -> Path:
+        scene_videos = render_all(project, out_dir / "scenes", on_progress=on_progress)
+        final_path = out_dir / "video.mp4"
         concat_scenes(scene_videos, final_path)
         return final_path
 
-    def export_h5p(self, project: Project, video_path: Path) -> Path:
+    def export_h5p(self, project: Project, video_path: Path, out_dir: Path) -> Path:
         bookmarks = generate_bookmarks(project.scenes)
         interactions = [build_interaction(ex) for ex in project.exercises]
         exercise_types = {ex.exercise_type for ex in project.exercises}
-        h5p_path = self.output_dir / f"{project.slug}.h5p"
+        h5p_path = out_dir / "video.h5p"
         build_h5p(video_path, bookmarks, h5p_path, interactions=interactions, exercise_types=exercise_types)
         return h5p_path
 
@@ -151,10 +165,17 @@ class Pipeline:
         project = self.generate_project(request, on_progress)
         self.generate_diagrams(project, on_progress)
         self.synthesize_voices(project, request.voice_profile, on_progress)
-        video_path = self.render(project, on_progress)
-        save_project_file(project, self.output_dir / f"{project.slug}.golpoproj")
-        h5p_path = self.export_h5p(project, video_path) if request.export_h5p else None
-        return PipelineResult(project=project, video_path=video_path, h5p_path=h5p_path)
+        out_dir = self.project_dir(project.slug, DEFAULT_LANGUAGE)
+        video_path = self.render(project, out_dir, on_progress)
+        save_project_file(project, out_dir / "project.golpoproj")
+        h5p_path = self.export_h5p(project, video_path, out_dir) if request.export_h5p else None
+        return PipelineResult(project=project, project_dir=out_dir, video_path=video_path, h5p_path=h5p_path)
 
-    def rerender_scene(self, project: Project, scene_id: str) -> Path:
-        return render_scene(project, scene_id)
+    def rerender_scene(self, project: Project, scene_id: str, out_dir: Path) -> Path:
+        """Force le re-rendu d'UNE scène (ignore son cache) puis reconstruit
+        la vidéo finale complète à partir de toutes les scènes (`render`
+        réutilise le cache pour celles qui n'ont pas changé) — corrige un
+        comportement précédent où le clip re-rendu n'était jamais réintégré
+        au montage final, qui restait donc périmé après un re-rendu ciblé."""
+        render_scene(project, scene_id, out_dir / "scenes")
+        return self.render(project, out_dir)
