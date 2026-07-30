@@ -4,7 +4,7 @@ import re
 from dataclasses import asdict, dataclass, field
 from typing import Any, Literal
 
-from app.render.theme_registry import palette_for_theme
+from app.render.theme_registry import palette_for_theme, semantic_color_for_icon
 
 CANVAS_WIDTH = 1920
 CANVAS_HEIGHT = 1080
@@ -13,11 +13,21 @@ ICON_SIZE = 220.0
 
 # Doit rester synchronisé avec les icônes réellement converties dans
 # app/render/web_template/icon_paths.js (voir docs/architecture.md pour
-# la procédure de conversion depuis Feather Icons).
+# la procédure de conversion depuis Feather Icons + Tabler Icons).
 ICON_NAMES = {
+    # Feather Icons (vocabulaire de base, meteo/UI générique)
     "sun", "cloud", "cloud-rain", "droplet", "arrow-right", "arrow-up",
     "arrow-down", "thermometer", "wind", "umbrella", "home", "book",
     "check", "refresh-cw", "map-pin", "zap",
+    # Tabler Icons : nature/geographie (ajoutees pour couvrir riviere,
+    # fleuve, ocean, mer, terre, montagne qui manquaient totalement)
+    "mountain", "world", "beach", "anchor", "sailboat", "ship", "tree",
+    "plant", "leaf", "seedling", "flower", "fish", "droplets", "ripple",
+    "wave-sine", "snowflake", "moon", "stars",
+    # Tabler Icons : concepts generaux reutilisables (pas specifiques a
+    # un sujet), utiles pour composer des schemas dans n'importe quel domaine
+    "flag", "heart", "bulb", "rocket", "clock", "calendar", "chart-bar",
+    "brain", "building", "building-bank", "users", "user", "coin", "scale",
 }
 
 ANIMATION_SIZE = 220.0
@@ -105,12 +115,14 @@ def _strokes_from_visual_elements(elements: list[dict[str, Any]], theme: str) ->
             name = str(el.get("name", "")).strip()
             if name not in ICON_NAMES:
                 continue
-            strokes.append(Stroke(points=[Point(x, y)], color=color, width=ICON_SIZE, kind="icon", text=name))
+            icon_color = semantic_color_for_icon(name, theme) or color
+            strokes.append(Stroke(points=[Point(x, y)], color=icon_color, width=ICON_SIZE, kind="icon", text=name))
         elif el_type == "animation":
             name = str(el.get("name", "")).strip()
             if name not in ANIMATION_NAMES:
                 continue
-            strokes.append(Stroke(points=[Point(x, y)], color=color, width=ANIMATION_SIZE, kind="animation", text=name))
+            anim_color = semantic_color_for_icon(name, theme) or color
+            strokes.append(Stroke(points=[Point(x, y)], color=anim_color, width=ANIMATION_SIZE, kind="animation", text=name))
     return strokes
 
 

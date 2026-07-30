@@ -98,15 +98,18 @@ Le LLM ne génère pas que du texte : chaque scène mélange texte et icônes
 système `app/llm/prompts.py`). Une icône hors vocabulaire est simplement
 ignorée plutôt que de faire planter le rendu.
 
-Les tracés viennent de **Feather Icons** (MIT), convertis une fois pour
-toutes en points (même format que les contours de police : commandes
-M/L/C/Z aplaties, marqueur `penUp` entre sous-tracés) via un script Node
-utilisant `svgpath` pour gérer les commandes d'arc SVG (`A`, présentes
-dans plusieurs icônes) — voir `icon_paths.js` (généré, ne pas éditer à la
-main) et `icon_to_path.js` (mise à l'échelle/position au rendu, viewBox
-natif 24×24). Pour ajouter une icône : reproduire la procédure de
-conversion avec le nom voulu, copier le résultat dans `icon_paths.js`, et
-ajouter le nom à `ICON_NAMES` (Python) et à la liste du prompt.
+Les tracés viennent de **Feather Icons** (MIT, 16 icônes de base) et
+**Tabler Icons** (MIT, `@tabler/icons`, 32 icônes ajoutées ensuite pour la
+nature/géographie et des concepts généraux — voir plus bas), convertis une
+fois pour toutes en points (même format que les contours de police :
+commandes M/L/C/Z aplaties, marqueur `penUp` entre sous-tracés) via un
+script Node utilisant `svgpath` pour gérer les commandes d'arc SVG (`A`,
+présentes dans plusieurs icônes) — voir `icon_paths.js` (généré, ne pas
+éditer à la main) et `icon_to_path.js` (mise à l'échelle/position au
+rendu, viewBox natif 24×24). Pour ajouter une icône : reproduire la
+procédure de conversion avec le nom voulu, copier le résultat dans
+`icon_paths.js`, et ajouter le nom à `ICON_NAMES` (Python) et à la liste
+du prompt.
 
 **Piège du convertisseur** (script Node de conversion, pas dans le repo
 Python) : une lettre de commande SVG normalisée par `svgpath` peut être
@@ -126,6 +129,53 @@ Chaque tracé d'une scène a son propre `start_sec`/`end_sec`, calculés côté
 Python (`app/render/timing.py`, répartition proportionnelle à la longueur
 du tracé) et simplement lus par le JS — les tracés s'écrivent l'un après
 l'autre (comme un vrai geste), pas tous en fondu simultané.
+
+**Vocabulaire étendu (Tabler Icons)** — retour utilisateur : vocabulaire
+initial (16 icônes Feather, surtout météo/UI) jugé "rachitique, sans
+ambition", avec absence totale de rivière/fleuve/océan/mer/terre/montagne.
+Ajout de 32 icônes **Tabler Icons** (MIT, `@tabler/icons`, bien plus
+large que Feather) via le même pipeline de conversion, `ICON_NAMES` passe
+de 16 à 48 noms. Le script de conversion lit maintenant deux répertoires
+sources (`FEATHER_ICONS/FEATHER_DIR` + `TABLER_ICONS/TABLER_DIR`) au lieu
+d'un seul.
+
+**Piège Tabler #1** : chaque SVG Tabler démarre par un
+`<path stroke="none" d="M0 0h24v24H0z" fill="none"/>` — un cadre de
+délimitation invisible pour l'alignement, pas un tracé à dessiner. Sans
+filtrage chaque icône héritait d'un rectangle parasite ; corrigé en
+sautant tout `<path>` dont `stroke="none"`.
+
+**Piège #2 (touchait déjà Feather, découvert seulement maintenant)** :
+même bug de "jeu de paramètres chaînés" documenté plus haut pour `C`,
+mais qui affectait en fait aussi certaines icônes Feather avant même
+l'ajout de Tabler — reconfirmé par une re-vérification individuelle des
+16 icônes Feather après restructuration du script (aucune régression).
+
+Il n'existe pas d'icône "rivière" ni "océan" dédiée dans Tabler sous ces
+noms exacts : le prompt système (`app/llm/prompts.py`) indique
+explicitement au LLM de réutiliser `wave-sine`/`ripple` pour un cours
+d'eau, `anchor`/`sailboat`/`ship`/`beach` pour évoquer mer/océan, plutôt
+que de laisser le LLM deviner ou halluciner un nom hors vocabulaire (qui
+serait silencieusement ignoré, voir plus haut).
+
+Les 48 icônes ont été revérifiées **individuellement** en rendant des
+grilles de 10 à la fois (`diag_icon_batch.py`, script paramétré par liste
+de noms + chemin de sortie) avant de considérer le vocabulaire validé —
+même discipline que pour le lot de 16 initial, condition sine qua non
+avant de toucher au reste du pipeline.
+
+**Couleurs sémantiques** — au lieu de faire tourner une palette générique
+(`palette[i % len(palette)]`, sans rapport avec ce que l'icône représente),
+`app/render/theme_registry.py` définit maintenant `ICON_SEMANTIC_CATEGORY`
+(icône → catégorie : eau, ciel, soleil, végétation, terre) et
+`THEME_SEMANTIC_COLORS` (catégorie → couleur, par thème). Les icônes hors
+table (concepts génériques : flèche, cœur, horloge, utilisateur...) n'ont
+pas de couleur "juste" évidente et gardent la rotation de palette
+classique. `semantic_color_for_icon(name, theme)` retourne `None` dans ce
+cas ; l'appelant (`schema.py`) retombe alors sur `palette[i % len(palette)]`.
+Deux couleurs (terre brune, pour chalk_board et whiteboard_marker) ont été
+ajoutées aux palettes de thème pour permettre ce mapping — elles entrent
+aussi dans la rotation classique, ce qui ajoute au passage de la variété.
 
 ### Animations (mouvement réel)
 

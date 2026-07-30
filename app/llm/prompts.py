@@ -1,7 +1,31 @@
 from app.scenes.schema import ANIMATION_NAMES, ICON_NAMES
 
-_ICON_LIST = ", ".join(sorted(ICON_NAMES))
 _ANIMATION_LIST = ", ".join(sorted(ANIMATION_NAMES))
+
+# Regroupees par categorie plutot qu'en une liste alphabetique plate : un
+# LLM compose des schemas bien plus coherents quand il voit les icones
+# organisees par sens (nature/geographie, meteo, concepts generaux) plutot
+# qu'une soupe de 48 noms. Sert aussi a suggerer des associations pour des
+# concepts qui n'ont pas d'icone dediee (riviere/fleuve -> wave-sine ou
+# ripple, ocean/mer -> anchor/sailboat/ship/beach, terre -> world/beach).
+_ICON_GROUPS = {
+    "nature et geographie (montagne, eau, vegetation)": [
+        "mountain", "world", "beach", "anchor", "sailboat", "ship",
+        "tree", "plant", "leaf", "seedling", "flower", "fish",
+        "droplet", "droplets", "ripple", "wave-sine", "cloud",
+        "cloud-rain", "wind", "snowflake", "sun", "moon", "stars",
+    ],
+    "meteo et mesure": ["thermometer", "umbrella", "zap"],
+    "concepts generaux (utilisables pour n'importe quel sujet)": [
+        "arrow-right", "arrow-up", "arrow-down", "home", "book", "check",
+        "refresh-cw", "map-pin", "flag", "heart", "bulb", "rocket",
+        "clock", "calendar", "chart-bar", "brain", "building",
+        "building-bank", "users", "user", "coin", "scale",
+    ],
+}
+_ICON_LIST = "\n".join(
+    f"  - {group} : {', '.join(names)}" for group, names in _ICON_GROUPS.items()
+)
 
 SYSTEM_PROMPT = f"""Tu es un générateur de vidéos explicatives style tableau.
 On te donne un document ou un prompt. Tu dois produire, en un seul passage :
@@ -9,19 +33,33 @@ On te donne un document ou un prompt. Tu dois produire, en un seul passage :
 - Un script détaillé de voix off.
 - Une liste de scènes avec texte et instruction de visuel minimaliste
   (une scène = un seul message clé, 5 à 20 secondes).
-- Pour chaque scène, 2 à 4 éléments visuels dessinés sur le tableau, un
-  mélange de texte, d'icônes ET d'animations quand c'est pertinent (une
-  scène uniquement en texte est fade — illustre le propos) :
+- Pour chaque scène, 3 à 6 éléments visuels dessinés sur le tableau (une
+  scène avec seulement 1 ou 2 éléments est trop pauvre visuellement).
+  Compose un vrai petit schéma cohérent plutôt que des icônes isolées :
+  par exemple pour un paysage, combine plusieurs icônes qui se complètent
+  (montagne + arbre + rivière/vague, ou nuage + pluie + goutte) autour
+  d'un texte court, plutôt qu'une seule icône perdue au milieu du tableau.
+  Mélange texte, icônes ET animations quand c'est pertinent (une scène
+  uniquement en texte est fade — illustre le propos) :
   - texte : {{"type": "text", "content": "Mot ou courte phrase", "x": 50, "y": 30}}
     (pas de phrases longues, c'est écrit à la craie)
   - icône (dessin statique) : {{"type": "icon", "name": "sun", "x": 50, "y": 30}}
     ("name" DOIT être choisi exactement dans cette liste, aucune autre
-    valeur n'est acceptée : {_ICON_LIST})
+    valeur n'est acceptée. Icônes disponibles, par catégorie :
+{_ICON_LIST}
+    Aucune icône "rivière" ou "océan" n'existe explicitement : utilise
+    "wave-sine" ou "ripple" pour un cours d'eau/courant, "anchor",
+    "sailboat", "ship" ou "beach" pour évoquer mer/océan, "mountain"
+    pour une montagne, "world" ou "beach" pour la terre/un continent.
   - animation (dessin avec du mouvement réel, à utiliser en priorité par
     rapport à une icône statique quand le concept implique un mouvement/
     processus — ex: la pluie qui tombe, plutôt qu'une simple icône de
     goutte immobile) : {{"type": "animation", "name": "falling_rain", "x": 50, "y": 30}}
     ("name" DOIT être choisi exactement dans cette liste : {_ANIMATION_LIST})
+    N'ajoute JAMAIS l'icône statique "cloud-rain" dans une scène qui a déjà
+    l'animation "falling_rain" (ou inversement) : ce sont deux façons de
+    représenter la même chose (nuage + pluie), les combiner ne fait que
+    dessiner deux nuages quasi identiques l'un au-dessus de l'autre.
   x et y sont des pourcentages de position sur le tableau (0 à 100 ;
   0,0 = coin haut-gauche, 100,100 = coin bas-droite). Espace les éléments
   pour qu'ils ne se chevauchent pas.
