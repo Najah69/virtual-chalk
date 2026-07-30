@@ -12,6 +12,10 @@ from app.scenes.schema import Scene
 CHARS_PER_SECOND = 10.0
 SHAPE_UNITS_PER_SECOND = 400.0
 ICON_DRAW_SECONDS = 1.3
+# Une animation a besoin de plus de temps que le tracé d'une icône statique
+# pour qu'on voie réellement plusieurs cycles de mouvement (ex: quelques
+# boucles de gouttes qui tombent) avant de se figer.
+ANIMATION_DRAW_SECONDS = 3.2
 MIN_DRAW_SECONDS = 0.6
 MAX_DRAW_SECONDS = 2.5
 
@@ -24,11 +28,14 @@ def _path_length(points) -> float:
 
 
 def _draw_duration(stroke) -> float:
-    # Comme pour le texte, une icône n'arrive ici qu'avec un point d'ancrage
-    # (le tracé réel n'est développé que côté JS) : _path_length donnerait
-    # toujours 1.0, on utilise donc une durée fixe raisonnable à la place.
+    # Comme pour le texte, une icône/animation n'arrive ici qu'avec un
+    # point d'ancrage (le tracé réel n'est développé que côté JS) :
+    # _path_length donnerait toujours 1.0, on utilise donc une durée fixe
+    # raisonnable à la place.
     if stroke.kind == "text" and stroke.text:
         raw = len(stroke.text) / CHARS_PER_SECOND
+    elif stroke.kind == "animation":
+        return ANIMATION_DRAW_SECONDS  # pas de plafond MAX_DRAW_SECONDS ici
     elif stroke.kind == "icon":
         raw = ICON_DRAW_SECONDS
     else:

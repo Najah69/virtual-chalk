@@ -22,6 +22,8 @@
   <script src="text_to_path.js"></script>
   <script src="icon_paths.js"></script>
   <script src="icon_to_path.js"></script>
+  <script src="icon_sprite.js"></script>
+  <script src="animations.js"></script>
   <script>
     const canvas = document.getElementById("stage");
     const ctx = canvas.getContext("2d");
@@ -63,13 +65,31 @@
     // tout à chaque frame coûtait O(frames × tampons visibles) — avec de
     // vrais contours de lettres (bien plus de points qu'un simple
     // placeholder), ce coût explosait et rendait le rendu très lent.
+    // Les strokes de type "animation" sont un cas à part : redessinés à
+    // CHAQUE frame tant qu'ils sont dans leur fenêtre active (ils
+    // "effacent" leur propre zone depuis le cache de texture du tableau à
+    // chaque appel, voir animations.js), puis figés une fois pour toutes
+    // dès que le temps dépasse leur end_sec — après quoi on ne les touche
+    // plus jamais, cohérent avec le reste du moteur qui n'efface rien.
     window.renderAtTime = function (t) {
       if (!currentScene || !currentTheme) return;
       const drawStroke = window.TOOLS[currentTheme.tool];
       for (const stroke of currentScene.strokes || []) {
         const span = Math.max(stroke.end_sec - stroke.start_sec, 0.0001);
         const progress = Math.min(1, Math.max(0, (t - stroke.start_sec) / span));
-        if (progress > 0) drawStroke(ctx, stroke, progress);
+        if (progress <= 0) continue;
+
+        if (stroke.kind === "animation") {
+          if (stroke._frozen) continue;
+          const fn = window.ANIMATIONS[stroke.text];
+          if (fn) {
+            const boardTexture = window._boardTextureCache[currentTheme.surface] || null;
+            fn(ctx, stroke, t - stroke.start_sec, boardTexture, currentTheme.tool);
+          }
+          if (t >= stroke.end_sec) stroke._frozen = true;
+        } else {
+          drawStroke(ctx, stroke, progress);
+        }
       }
     };
 

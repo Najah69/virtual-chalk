@@ -20,6 +20,12 @@ ICON_NAMES = {
     "check", "refresh-cw", "map-pin", "zap",
 }
 
+ANIMATION_SIZE = 220.0
+
+# Doit rester synchronisé avec window.ANIMATIONS dans
+# app/render/web_template/animations.js.
+ANIMATION_NAMES = {"falling_rain"}
+
 
 @dataclass
 class Point:
@@ -36,7 +42,7 @@ class Stroke:
     points: list[Point]
     color: str
     width: float
-    kind: Literal["text", "shape", "icon"] = "shape"
+    kind: Literal["text", "shape", "icon", "animation"] = "shape"
     text: str = ""
     start_sec: float = 0.0
     end_sec: float = 0.0
@@ -100,6 +106,11 @@ def _strokes_from_visual_elements(elements: list[dict[str, Any]], theme: str) ->
             if name not in ICON_NAMES:
                 continue
             strokes.append(Stroke(points=[Point(x, y)], color=color, width=ICON_SIZE, kind="icon", text=name))
+        elif el_type == "animation":
+            name = str(el.get("name", "")).strip()
+            if name not in ANIMATION_NAMES:
+                continue
+            strokes.append(Stroke(points=[Point(x, y)], color=color, width=ANIMATION_SIZE, kind="animation", text=name))
     return strokes
 
 

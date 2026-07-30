@@ -1,6 +1,18 @@
-// Utilitaire partagé par les surfaces "tableau" (craie) : génère une
-// texture de grain une seule fois par taille de canvas (mise en cache par
-// l'appelant), pour ne pas recalculer du bruit à chaque frame.
+// Utilitaire partagé par les surfaces "tableau" : génère une texture de
+// grain, mise en cache dans window._boardTextureCache (accessible aussi
+// par le système d'animation — voir animations.js — pour "effacer"
+// localement une zone en la redessinant depuis ce cache, sans toucher au
+// reste du tableau déjà tracé).
+window._boardTextureCache = {};
+
+window.getCachedBoardTexture = function getCachedBoardTexture(key, width, height, baseColor) {
+  const cached = window._boardTextureCache[key];
+  if (cached && cached.width === width && cached.height === height) return cached;
+  const canvas = window.buildBoardNoise(width, height, baseColor);
+  window._boardTextureCache[key] = canvas;
+  return canvas;
+};
+
 window.buildBoardNoise = function buildBoardNoise(width, height, baseColor) {
   const off = document.createElement("canvas");
   off.width = width;

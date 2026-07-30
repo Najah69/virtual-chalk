@@ -108,10 +108,58 @@ natif 24×24). Pour ajouter une icône : reproduire la procédure de
 conversion avec le nom voulu, copier le résultat dans `icon_paths.js`, et
 ajouter le nom à `ICON_NAMES` (Python) et à la liste du prompt.
 
+**Piège du convertisseur** (script Node de conversion, pas dans le repo
+Python) : une lettre de commande SVG normalisée par `svgpath` peut être
+suivie de plusieurs jeux de paramètres chaînés (répétition implicite de la
+même commande — `unarc()` transforme souvent un arc en 2-3 courbes C
+consécutives sous une seule lettre). Ne lire que le premier jeu tronque la
+forme silencieusement ; il faut boucler sur tous les jeux de paramètres
+d'un même token. `H`/`V` (ligne horizontale/verticale) ne sont pas non
+plus converties par `svgpath` et doivent être gérées à la main (converties
+en `L` via la position courante suivie manuellement). Vérifié en rendant
+les 16 icônes une par une après coup — plusieurs (nuage, goutte,
+thermomètre...) avaient une forme silencieusement déformée avant ce
+correctif, alors que d'autres (maison, flèches) avaient l'air correctes
+par coïncidence malgré le même bug.
+
 Chaque tracé d'une scène a son propre `start_sec`/`end_sec`, calculés côté
 Python (`app/render/timing.py`, répartition proportionnelle à la longueur
 du tracé) et simplement lus par le JS — les tracés s'écrivent l'un après
 l'autre (comme un vrai geste), pas tous en fondu simultané.
+
+### Animations (mouvement réel)
+
+Contrairement au texte/icônes (révélés progressivement puis figés pour
+toujours), certains éléments ont un vrai mouvement — ex: `falling_rain`
+(nuage + gouttes qui tombent en boucle). `Stroke.kind = "animation"`,
+vocabulaire fixe dans `ANIMATION_NAMES` (`app/scenes/schema.py`), même
+mécanisme de validation que les icônes.
+
+Le reste du moteur ne touche jamais au canvas une fois quelque chose
+dessiné (juste accumulé, jamais effacé — c'est ce qui permet le rendu
+incrémental rapide). Une animation a besoin de faire l'inverse : ses
+éléments bougent, donc chaque frame doit "effacer" sa propre zone avant de
+la redessiner. Elle le fait en redessinant depuis
+`window._boardTextureCache[surface]` (voir `surfaces/board_noise.js`,
+qui expose maintenant ce cache), jamais en vidant tout le canvas — pour ne
+jamais toucher au reste du tableau déjà tracé ailleurs.
+
+Une fois sa fenêtre `end_sec` dépassée, l'animation est appelée une
+dernière fois puis marquée `_frozen` (voir `index.html`) : elle cesse
+alors d'être touchée pour le reste de la scène, cohérent avec le principe
+"la craie posée ne bouge plus" — et ça évite qu'elle continue à effacer
+sa zone indéfiniment si un élément plus tardif venait à s'y superposer.
+
+La partie statique d'une animation (ex: le contour du nuage) est
+pré-rendue une seule fois en sprite offscreen (`icon_sprite.js`,
+réutilise le moteur craie/feutre existant) plutôt que recalculée à chaque
+frame — seuls les éléments qui bougent (les gouttes) sont redessinés.
+
+Vérifié avec une séquence de plusieurs frames dans la fenêtre active (pas
+une seule image, qui ne peut jamais prouver un mouvement) : positions des
+gouttes différentes d'une frame à l'autre, gel correct après `end_sec`,
+et absence d'interférence avec un texte positionné ailleurs et apparu
+après le gel.
 
 ### Sons de craie
 
