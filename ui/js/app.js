@@ -172,6 +172,36 @@ document.getElementById("btn-export-h5p-now").addEventListener("click", async ()
   status.textContent = ` Exporté : ${path}`;
 });
 
+document.getElementById("btn-settings").addEventListener("click", async () => {
+  const settings = await window.pywebview.api.get_settings();
+  document.getElementById("set-llm-provider").value = settings.llm_provider;
+  document.getElementById("set-llm-model").value = settings.llm_model;
+  document.getElementById("set-default-theme").value = settings.default_theme;
+  document.getElementById("set-output-dir").value = settings.default_output_dir;
+  document.getElementById("set-export-h5p").checked = settings.export_h5p_by_default;
+  document.getElementById("settings-overlay").classList.add("open");
+});
+
+document.getElementById("btn-settings-cancel").addEventListener("click", () => {
+  document.getElementById("settings-overlay").classList.remove("open");
+});
+
+document.getElementById("btn-pick-output-dir").addEventListener("click", async () => {
+  const path = await window.pywebview.api.pick_output_folder();
+  if (path) document.getElementById("set-output-dir").value = path;
+});
+
+document.getElementById("btn-settings-save").addEventListener("click", async () => {
+  await window.pywebview.api.save_settings({
+    llm_provider: document.getElementById("set-llm-provider").value,
+    llm_model: document.getElementById("set-llm-model").value,
+    default_theme: document.getElementById("set-default-theme").value,
+    default_output_dir: document.getElementById("set-output-dir").value,
+    export_h5p_by_default: document.getElementById("set-export-h5p").checked,
+  });
+  document.getElementById("settings-overlay").classList.remove("open");
+});
+
 window.addEventListener("pywebviewready", () => {
   loadThemeGallery();
   loadVoices();

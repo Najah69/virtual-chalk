@@ -147,6 +147,52 @@
     </section>
   </div>
 
+  <div class="modal-overlay" id="settings-overlay">
+    <div class="modal">
+      <h2>Réglages</h2>
+
+      <label style="display:block; margin-top:12px">
+        Fournisseur LLM
+        <select id="set-llm-provider">
+          <option value="openrouter">OpenRouter</option>
+          <option value="gemini">Gemini</option>
+          <option value="deepseek">DeepSeek</option>
+        </select>
+      </label>
+
+      <label style="display:block; margin-top:12px">
+        Modèle LLM
+        <input type="text" id="set-llm-model" style="width:100%" placeholder="Ex : gpt-4o-mini" />
+      </label>
+
+      <label style="display:block; margin-top:12px">
+        Thème par défaut
+        <select id="set-default-theme">
+          <option value="chalk_board">Tableau craie</option>
+          <option value="whiteboard_marker">Tableau blanc + feutres</option>
+        </select>
+      </label>
+
+      <label style="display:block; margin-top:12px">
+        Dossier de sortie par défaut
+        <div style="display:flex; gap:8px; margin-top:4px">
+          <input type="text" id="set-output-dir" style="flex:1" />
+          <button type="button" class="secondary" id="btn-pick-output-dir">Parcourir</button>
+        </div>
+      </label>
+
+      <label style="display:block; margin-top:12px">
+        <input type="checkbox" id="set-export-h5p" />
+        Exporter le .h5p par défaut
+      </label>
+
+      <div style="margin-top:24px; display:flex; gap:8px; justify-content:flex-end">
+        <button class="secondary" id="btn-settings-cancel">Annuler</button>
+        <button class="primary" id="btn-settings-save">Enregistrer</button>
+      </div>
+    </div>
+  </div>
+
   <script src="js/app.js"></script>
 </body>
 </html>
