@@ -6,6 +6,7 @@ from typing import Any
 import webview
 
 from app.ingestion.text_normalizer import normalize_source
+from app.llm.deepseek import DeepSeekProvider
 from app.llm.gemini import GeminiProvider
 from app.llm.openrouter import OpenRouterProvider
 from app.pipeline import Pipeline
@@ -44,12 +45,16 @@ class Api:
     def list_voice_profiles(self) -> list[dict[str, Any]]:
         return [p.__dict__ for p in list_voice_profiles()]
 
+    LLM_PROVIDERS = {
+        "gemini": GeminiProvider,
+        "openrouter": OpenRouterProvider,
+        "deepseek": DeepSeekProvider,
+    }
+
     def _build_pipeline(self) -> Pipeline:
         provider_key = get_api_key(self.settings.llm_provider) or ""
-        if self.settings.llm_provider == "gemini":
-            llm = GeminiProvider(api_key=provider_key, model=self.settings.llm_model)
-        else:
-            llm = OpenRouterProvider(api_key=provider_key, model=self.settings.llm_model)
+        provider_cls = self.LLM_PROVIDERS.get(self.settings.llm_provider, OpenRouterProvider)
+        llm = provider_cls(api_key=provider_key, model=self.settings.llm_model)
         tts = SapiLocalProvider()
         return Pipeline(llm=llm, tts=tts, output_dir=Path(self.settings.default_output_dir))
 
