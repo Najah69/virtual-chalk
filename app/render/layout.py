@@ -41,6 +41,9 @@ def _bbox(el: dict) -> tuple[float, float, float, float]:
     if el["kind"] == "animation":
         h = size * 1.7
         return (x - 14 - _PADDING, y - 14 - _PADDING, x + size + 14 + _PADDING, y + h + 14 + _PADDING)
+    if el["kind"] == "diagram":
+        h = el.get("height", size)
+        return (x - _PADDING, y - _PADDING, x + size + _PADDING, y + h + _PADDING)
     return (x - _PADDING, y - _PADDING, x + size + _PADDING, y + size + _PADDING)
 
 

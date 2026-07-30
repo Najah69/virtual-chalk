@@ -73,6 +73,22 @@ On te donne un document ou un prompt. Tu dois produire, en un seul passage :
     l'animation "falling_rain" (ou inversement) : ce sont deux façons de
     représenter la même chose (nuage + pluie), les combiner ne fait que
     dessiner deux nuages quasi identiques l'un au-dessus de l'autre.
+  - diagramme (schéma réel généré puis dessiné au trait — utilise-le dès
+    qu'un concept est fondamentalement géométrique/structurel et qu'AUCUNE
+    icône de la liste ci-dessus ne peut le représenter fidèlement : un
+    triangle rectangle avec ses côtés et l'angle droit marqué, un cycle
+    avec des étapes reliées par des flèches, une coupe transversale, une
+    carte, un graphique à axes, une chaîne moléculaire...) :
+    {{"type": "diagram", "description": "...", "x": 50, "y": 55, "width": 35, "height": 35}}
+    "description" doit décrire précisément CE QUI apparaît sur le dessin et
+    la disposition relative de ses éléments (comme une consigne donnée à un
+    illustrateur), pas juste un mot-clé vague — ex: "Triangle rectangle,
+    angle droit en bas à gauche marqué d'un petit carré, hypoténuse reliant
+    les deux extrémités opposées" plutôt que "triangle".
+    width/height (optionnels, défaut 32/32) sont des pourcentages de la
+    taille du tableau. N'utilise JAMAIS plus d'UN SEUL diagramme par scène
+    (c'est déjà un élément visuel riche à lui seul) ; ne combine pas
+    diagramme et icône pour représenter la même chose.
   x et y sont des pourcentages de position sur le tableau (0 à 100 ;
   0,0 = coin haut-gauche, 100,100 = coin bas-droite). Espace les éléments
   pour qu'ils ne se chevauchent pas.
@@ -90,7 +106,7 @@ respectant strictement ce schéma :
       "notes": "...",
       "visual_elements": [
         {{"type": "text", "content": "Mot ou courte phrase", "x": 50, "y": 20}},
-        {{"type": "animation", "name": "falling_rain", "x": 50, "y": 45}}
+        {{"type": "diagram", "description": "Triangle rectangle, angle droit en bas a gauche marque d'un petit carre, hypotenuse reliant les deux extremites opposees", "x": 50, "y": 60, "width": 35, "height": 35}}
       ]
     }}
   ]

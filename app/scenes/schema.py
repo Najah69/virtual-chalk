@@ -33,6 +33,12 @@ ICON_NAMES = {
 
 ANIMATION_SIZE = 220.0
 
+# Taille par defaut d'un diagramme genere (image -> vectorisation) quand le
+# LLM ne precise pas width/height : assez grand pour qu'un schema (triangle,
+# cycle, carte...) reste lisible sans dominer tout le tableau.
+DIAGRAM_DEFAULT_WIDTH_PCT = 32.0
+DIAGRAM_DEFAULT_HEIGHT_PCT = 32.0
+
 # Doit rester synchronisé avec window.ANIMATIONS dans
 # app/render/web_template/animations.js.
 ANIMATION_NAMES = {"falling_rain"}
@@ -42,6 +48,12 @@ ANIMATION_NAMES = {"falling_rain"}
 class Point:
     x: float
     y: float
+    # Marque le debut d'un sous-tracé disjoint (ex: le 2e côté d'un
+    # triangle, une lettre suivante) : chalk.js/marker_veleda.js sautent le
+    # segment entre ce point et le précédent plutôt que de les relier.
+    # Toujours False pour texte/icône (points recalculés côté JS de toute
+    # façon), n'a de sens que pour les strokes "shape" issus d'un diagramme.
+    penUp: bool = False
 
 
 @dataclass
@@ -53,8 +65,9 @@ class Stroke:
     points: list[Point]
     color: str
     width: float
-    kind: Literal["text", "shape", "icon", "animation"] = "shape"
+    kind: Literal["text", "shape", "icon", "animation", "diagram"] = "shape"
     text: str = ""
+    height: float = 0.0
     start_sec: float = 0.0
     end_sec: float = 0.0
 
@@ -131,12 +144,21 @@ def _strokes_from_visual_elements(elements: list[dict[str, Any]], theme: str) ->
                 continue
             anim_color = semantic_color_for_icon(name, theme) or color
             planned.append({"kind": "animation", "x": x, "y": y, "size": ANIMATION_SIZE, "content": "", "name": name, "color": anim_color})
+        elif el_type == "diagram":
+            description = str(el.get("description", "")).strip()
+            if not description:
+                continue
+            width_px = (float(el.get("width", DIAGRAM_DEFAULT_WIDTH_PCT)) / 100.0) * CANVAS_WIDTH
+            height_px = (float(el.get("height", DIAGRAM_DEFAULT_HEIGHT_PCT)) / 100.0) * CANVAS_HEIGHT
+            planned.append({"kind": "diagram", "x": x, "y": y, "size": width_px, "height": height_px,
+                             "content": description, "name": "", "color": color})
 
     resolve_overlaps(planned, CANVAS_WIDTH, CANVAS_HEIGHT)
 
     return [
         Stroke(points=[Point(el["x"], el["y"])], color=el["color"], width=el["size"],
-               kind=el["kind"], text=el["content"] if el["kind"] == "text" else el["name"])
+               height=el.get("height", 0.0), kind=el["kind"],
+               text=el["content"] if el["kind"] in ("text", "diagram") else el["name"])
         for el in planned
     ]
 

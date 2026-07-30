@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Callable, Optional
@@ -8,11 +9,14 @@ from app.h5p.bookmarks import generate_bookmarks
 from app.h5p.interactions import build_interaction
 from app.h5p.packager import build_h5p
 from app.llm.base import LLMProvider
+from app.render.diagram_generator import DIAGRAM_LINE_WIDTH, generate_diagram_points
 from app.render.ffmpeg_wrapper import concat_scenes
 from app.render.partial_render import render_all, render_scene
 from app.scenes.project_file import save_project_file
 from app.scenes.schema import Project
 from app.tts.base import TTSProvider, VoiceProfile
+
+logger = logging.getLogger(__name__)
 
 ProgressCallback = Optional[Callable[[str, float], None]]
 
@@ -31,10 +35,15 @@ class Pipeline:
     suivantes ne consomment aucun token (édition locale, re-rendu ciblé).
     """
 
-    def __init__(self, llm: LLMProvider, tts: TTSProvider, output_dir: Path):
+    def __init__(self, llm: LLMProvider, tts: TTSProvider, output_dir: Path,
+                 diagram_api_key: str | None = None):
         self.llm = llm
         self.tts = tts
         self.output_dir = output_dir
+        # Les diagrammes passent toujours par Gemini (generation d'image),
+        # independamment du fournisseur LLM choisi pour le script — meme
+        # logique que _build_tts pour la voix Gemini dans api_bridge.py.
+        self.diagram_api_key = diagram_api_key
 
     def generate_project(self, source_text: str, theme: str = "chalk_board",
                           on_progress: ProgressCallback = None) -> Project:
@@ -44,6 +53,47 @@ class Pipeline:
         if on_progress:
             on_progress("script", 1.0)
         return project
+
+    def generate_diagrams(self, project: Project, on_progress: ProgressCallback = None) -> None:
+        """Resout les strokes 'diagram' (description en langage naturel,
+        posee par le LLM du script) en vrai trace vectoriel : genere une
+        image via Gemini puis la vectorise en contours (voir
+        app/render/diagram_generator.py). Sans cle API Gemini configuree,
+        ou si un appel echoue pour une scene donnee, le diagramme concerne
+        est simplement retire plutot que de faire echouer toute la
+        generation — un schema manquant sur une scene reste moins grave
+        qu'une video qui ne se termine pas."""
+        pending = [
+            (scene, stroke) for scene in project.scenes for stroke in scene.strokes
+            if stroke.kind == "diagram"
+        ]
+        if not pending:
+            return
+        for i, (scene, stroke) in enumerate(pending):
+            try:
+                if not self.diagram_api_key:
+                    raise RuntimeError("Pas de cle API Gemini configuree pour les diagrammes")
+                anchor = stroke.points[0]
+                points = generate_diagram_points(
+                    stroke.text, self.diagram_api_key, anchor.x, anchor.y, stroke.width, stroke.height,
+                )
+                if points:
+                    stroke.points = points
+                    # stroke.width/height portaient le cadre de placement
+                    # (pixels du tableau) pour la vectorisation ci-dessus ;
+                    # on les remet a une epaisseur de trait normale avant
+                    # que le stroke ne passe en kind="shape" et soit dessine
+                    # tel quel par chalk.js/marker_veleda.js.
+                    stroke.width = DIAGRAM_LINE_WIDTH
+                    stroke.height = 0.0
+                    stroke.kind = "shape"
+                else:
+                    scene.strokes.remove(stroke)
+            except Exception:
+                logger.exception("Echec de generation du diagramme %r", stroke.text)
+                scene.strokes.remove(stroke)
+            if on_progress:
+                on_progress("diagram", (i + 1) / len(pending))
 
     def synthesize_voices(self, project: Project, voice_profile: VoiceProfile,
                            on_progress: ProgressCallback = None) -> None:
@@ -72,6 +122,7 @@ class Pipeline:
     def run(self, source_text: str, voice_profile: VoiceProfile, export_h5p: bool,
             theme: str = "chalk_board", on_progress: ProgressCallback = None) -> PipelineResult:
         project = self.generate_project(source_text, theme, on_progress)
+        self.generate_diagrams(project, on_progress)
         self.synthesize_voices(project, voice_profile, on_progress)
         video_path = self.render(project, on_progress)
         save_project_file(project, self.output_dir / f"{project.slug}.golpoproj")

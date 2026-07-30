@@ -11,7 +11,7 @@ function goToStep(n) {
 }
 
 window.onPipelineProgress = function (step, fraction) {
-  const label = { script: "Script...", voice: "Voix...", render: "Animation...", encode: "Assemblage vidéo..." }[step] || step;
+  const label = { script: "Script...", diagram: "Schémas...", voice: "Voix...", render: "Animation...", encode: "Assemblage vidéo..." }[step] || step;
   document.getElementById("progress-label").textContent = label;
   document.getElementById("progress-bar").value = fraction;
 };

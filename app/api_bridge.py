@@ -68,7 +68,8 @@ class Api:
         provider_cls = self.LLM_PROVIDERS.get(self.settings.llm_provider, OpenRouterProvider)
         llm = provider_cls(api_key=provider_key, model=self.settings.llm_model)
         tts = self._build_tts(voice_profile)
-        return Pipeline(llm=llm, tts=tts, output_dir=Path(self.settings.default_output_dir))
+        return Pipeline(llm=llm, tts=tts, output_dir=Path(self.settings.default_output_dir),
+                         diagram_api_key=get_api_key("gemini"))
 
     def start_pipeline(self, source: dict[str, Any], voice_profile_name: str, export_h5p: bool,
                         theme: str = "chalk_board") -> dict[str, Any]:
