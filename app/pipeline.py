@@ -9,6 +9,7 @@ from app.h5p.bookmarks import generate_bookmarks
 from app.h5p.interactions import build_interaction
 from app.h5p.packager import build_h5p
 from app.llm.base import LLMProvider
+from app.llm.prompts import DEFAULT_VIDEO_PROFILE
 from app.render.diagram_generator import DIAGRAM_LINE_WIDTH, generate_diagram_points
 from app.render.ffmpeg_wrapper import concat_scenes
 from app.render.partial_render import render_all, render_scene
@@ -46,10 +47,11 @@ class Pipeline:
         self.diagram_api_key = diagram_api_key
 
     def generate_project(self, source_text: str, theme: str = "chalk_board",
+                          script_profile: str = DEFAULT_VIDEO_PROFILE,
                           on_progress: ProgressCallback = None) -> Project:
         if on_progress:
             on_progress("script", 0.0)
-        project = self.llm.generate_script(source_text, theme=theme)
+        project = self.llm.generate_script(source_text, theme=theme, script_profile=script_profile)
         if on_progress:
             on_progress("script", 1.0)
         return project
@@ -128,8 +130,9 @@ class Pipeline:
         return h5p_path
 
     def run(self, source_text: str, voice_profile: VoiceProfile, export_h5p: bool,
-            theme: str = "chalk_board", on_progress: ProgressCallback = None) -> PipelineResult:
-        project = self.generate_project(source_text, theme, on_progress)
+            theme: str = "chalk_board", script_profile: str = DEFAULT_VIDEO_PROFILE,
+            on_progress: ProgressCallback = None) -> PipelineResult:
+        project = self.generate_project(source_text, theme, script_profile, on_progress)
         self.generate_diagrams(project, on_progress)
         self.synthesize_voices(project, voice_profile, on_progress)
         video_path = self.render(project, on_progress)

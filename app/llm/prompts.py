@@ -27,25 +27,78 @@ ICON_LIST = "\n".join(
     f"  - {group} : {', '.join(names)}" for group, names in _ICON_GROUPS.items()
 )
 
-SYSTEM_PROMPT = f"""Tu es un générateur de vidéos explicatives style tableau.
+# Un profil ajuste le TON et la STRUCTURE du script (nombre de scenes, presence
+# ou non d'une intro/conclusion développée, type de scenes) sans toucher au
+# vocabulaire visuel (texte/icone/animation/diagramme) ni au format JSON, qui
+# restent identiques quel que soit le profil — un seul appel LLM, une seule
+# structure de sortie, seule la consigne narrative change.
+VIDEO_PROFILES = {
+    "cours_magistral": {
+        "label": "Cours magistral détaillé",
+        "guidance": (
+            "Profil \"cours magistral détaillé\" : introduction qui accroche "
+            "puis annonce le plan, plusieurs sections pédagogiques qui "
+            "développent chaque sous-concept en profondeur, conclusion qui "
+            "récapitule. Ton posé et pédagogique, quitte à être plus long "
+            "(6 à 10 scènes). C'est le format par défaut, le plus complet."
+        ),
+    },
+    "fiche_revision": {
+        "label": "Fiche de révision courte",
+        "guidance": (
+            "Profil \"fiche de révision courte\" : PAS de grande introduction "
+            "ni de conclusion développée, va droit au but dès la première "
+            "scène. Scènes courtes et denses, une par point clé à retenir "
+            "(4 à 6 scènes), phrases courtes, ton direct comme une fiche "
+            "révisée juste avant un examen."
+        ),
+    },
+    "demo_produit": {
+        "label": "Démo produit / feature explainer",
+        "guidance": (
+            "Profil \"démo produit / feature explainer\" : accroche sur un "
+            "problème concret et relatable, puis présentation de la "
+            "solution, puis bénéfices concrets, puis un appel à l'action "
+            "clair en conclusion (essayer, en savoir plus...). Ton "
+            "enthousiaste et orienté bénéfices plutôt que purement "
+            "descriptif (5 à 7 scènes)."
+        ),
+    },
+    "tutoriel": {
+        "label": "Tutoriel pas-à-pas",
+        "guidance": (
+            "Profil \"tutoriel pas-à-pas\" : brève intro sur ce qu'on va "
+            "accomplir, puis une scène par étape concrète et actionnable "
+            "dans l'ordre exact où l'utilisateur doit les suivre (numérote-"
+            "les explicitement dans le texte affiché, ex: \"Étape 1\"), "
+            "conclusion qui confirme le résultat final attendu. Ton "
+            "pratique, orienté action."
+        ),
+    },
+}
+DEFAULT_VIDEO_PROFILE = "cours_magistral"
+
+
+def build_system_prompt(profile: str = DEFAULT_VIDEO_PROFILE) -> str:
+    profile_info = VIDEO_PROFILES.get(profile, VIDEO_PROFILES[DEFAULT_VIDEO_PROFILE])
+    return f"""Tu es un générateur de vidéos explicatives style tableau.
 On te donne un document ou un prompt. Tu dois produire, en un seul passage :
 - Un résumé structuré en sections.
 - Un script détaillé de voix off.
 - Une liste de scènes avec texte et instruction de visuel minimaliste
   (une scène = un seul message clé, 5 à 20 secondes).
-- La PREMIÈRE scène est une vraie introduction, pas juste la première idée
-  technique du sujet : accroche brièvement le sujet (pourquoi c'est
-  intéressant/utile) puis annonce ce qui va être expliqué, avant d'entrer
-  dans le contenu. Sa voix off doit donc faire au moins 2-3 phrases, pas
-  une seule phrase minimaliste — la durée réelle de chaque scène vient de
-  la longueur de sa voix off une fois synthétisée (pas du champ
-  `duration_sec`, qui n'est qu'une estimation initiale), donc une
-  introduction trop courte se traduit directement par une ouverture
-  expédiée à l'écran.
-- La DERNIÈRE scène est une vraie conclusion, pas un dernier fait technique
-  ajouté à la hâte : récapitule en une phrase l'idée centrale, puis referme
-  proprement (ex: pourquoi c'est important à retenir). Même exigence de
-  longueur (2-3 phrases) et pour la même raison.
+
+{profile_info['guidance']}
+
+- La PREMIÈRE et la DERNIÈRE scène suivent la consigne du profil ci-dessus
+  (une vraie introduction/conclusion développée pour "cours magistral" ou
+  "démo produit", directe et minimale pour "fiche de révision"). Quand une
+  introduction/conclusion développée est demandée, sa voix off doit faire
+  au moins 2-3 phrases, pas une seule phrase minimaliste — la durée réelle
+  de chaque scène vient de la longueur de sa voix off une fois synthétisée
+  (pas du champ `duration_sec`, qui n'est qu'une estimation initiale), donc
+  une intro/conclusion trop courte alors qu'elle devait être développée se
+  traduit directement par une ouverture/fermeture expédiée à l'écran.
 - Pour chaque scène, 3 à 6 éléments visuels dessinés sur le tableau (une
   scène avec seulement 1 ou 2 éléments est trop pauvre visuellement).
   Compose un vrai petit schéma cohérent plutôt que des icônes isolées :

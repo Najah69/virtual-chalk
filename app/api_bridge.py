@@ -13,6 +13,7 @@ from app.ingestion.text_normalizer import normalize_source
 from app.llm.deepseek import DeepSeekProvider
 from app.llm.gemini import GeminiProvider
 from app.llm.openrouter import OpenRouterProvider
+from app.llm.prompts import DEFAULT_VIDEO_PROFILE, VIDEO_PROFILES
 from app.paths import UI_DIR
 from app.pipeline import Pipeline
 from app.scenes.project_file import load_project_file, save_project_file
@@ -60,6 +61,9 @@ class Api:
     def list_voice_profiles(self) -> list[dict[str, Any]]:
         return [p.__dict__ for p in list_voice_profiles()]
 
+    def list_video_profiles(self) -> list[dict[str, Any]]:
+        return [{"key": key, "label": info["label"]} for key, info in VIDEO_PROFILES.items()]
+
     LLM_PROVIDERS = {
         "gemini": GeminiProvider,
         "openrouter": OpenRouterProvider,
@@ -80,7 +84,7 @@ class Api:
                          diagram_api_key=get_api_key("gemini"))
 
     def start_pipeline(self, source: dict[str, Any], voice_profile_name: str, export_h5p: bool,
-                        theme: str = "chalk_board") -> dict[str, Any]:
+                        theme: str = "chalk_board", script_profile: str = DEFAULT_VIDEO_PROFILE) -> dict[str, Any]:
         text = normalize_source(source)
         profile = next((p for p in list_voice_profiles() if p.name == voice_profile_name), None)
         pipeline = self._build_pipeline(profile)
@@ -90,7 +94,8 @@ class Api:
                 f"window.onPipelineProgress({step!r}, {fraction})"
             )
 
-        result = pipeline.run(text, profile, export_h5p, theme=theme, on_progress=on_progress)
+        result = pipeline.run(text, profile, export_h5p, theme=theme,
+                               script_profile=script_profile, on_progress=on_progress)
         self._current_project = result.project
         self._current_video_path = result.video_path
         self._current_voice_profile = profile

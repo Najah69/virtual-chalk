@@ -40,6 +40,12 @@ async function loadVoices() {
   select.innerHTML = profiles.map((p) => `<option value="${p.name}">${p.name}</option>`).join("");
 }
 
+async function loadVideoProfiles() {
+  const select = document.getElementById("video-profile-select");
+  const profiles = await window.pywebview.api.list_video_profiles();
+  select.innerHTML = profiles.map((p) => `<option value="${p.key}">${p.label}</option>`).join("");
+}
+
 document.getElementById("btn-pick-file").addEventListener("click", async () => {
   const path = await window.pywebview.api.pick_file();
   if (path) document.getElementById("source-text").value = `[Fichier sélectionné] ${path}`;
@@ -56,7 +62,8 @@ document.getElementById("btn-go-step4").addEventListener("click", async () => {
   const voiceProfile = document.getElementById("voice-select").value;
   const exportH5p = document.getElementById("export-h5p").checked;
   const theme = document.querySelector(".theme-card.selected")?.dataset.theme || "chalk_board";
-  const result = await window.pywebview.api.start_pipeline(source, voiceProfile, exportH5p, theme);
+  const videoProfile = document.getElementById("video-profile-select").value;
+  const result = await window.pywebview.api.start_pipeline(source, voiceProfile, exportH5p, theme, videoProfile);
   lastVideoPath = result.video_path;
   document.getElementById("result-video").src = result.video_path;
   goToStep(5);
@@ -209,4 +216,5 @@ document.getElementById("btn-settings-save").addEventListener("click", async () 
 window.addEventListener("pywebviewready", () => {
   loadThemeGallery();
   loadVoices();
+  loadVideoProfiles();
 });

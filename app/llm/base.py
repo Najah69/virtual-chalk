@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 from abc import ABC, abstractmethod
 
-from app.llm.prompts import SYSTEM_PROMPT, build_user_prompt
+from app.llm.prompts import DEFAULT_VIDEO_PROFILE, build_system_prompt, build_user_prompt
 from app.scenes.schema import Project
 
 
@@ -26,6 +26,7 @@ class LLMProvider(ABC):
         raw = self._complete(system_prompt, user_prompt)
         return json.loads(raw)
 
-    def generate_script(self, source_text: str, theme: str = "chalk_board") -> Project:
-        data = self.complete_json(SYSTEM_PROMPT, build_user_prompt(source_text))
+    def generate_script(self, source_text: str, theme: str = "chalk_board",
+                         script_profile: str = DEFAULT_VIDEO_PROFILE) -> Project:
+        data = self.complete_json(build_system_prompt(script_profile), build_user_prompt(source_text))
         return Project.from_llm_response(data, theme=theme)
