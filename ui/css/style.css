@@ -33,6 +33,11 @@ body {
   border-radius: 999px;
   background: #eceae3;
   font-size: 13px;
+  cursor: pointer;
+}
+
+.steps-nav .step:hover {
+  background: #ddd9cd;
 }
 
 .steps-nav .step.active {

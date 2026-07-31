@@ -15,6 +15,36 @@ def test_project_file_extension_is_vchalk():
     assert PROJECT_FILE_EXTENSION == ".vchalk"
 
 
+def test_pick_project_file_filter_is_valid_for_pywebview(monkeypatch):
+    """Régression : pywebview valide les libellés de filtre de fichier
+    côté Python avec une regex qui n'autorise ni tiret ni accent avant la
+    parenthèse (webview.util.parse_file_type, `^([\\w ]+)\\(...`). Un
+    libellé du type "Projets Virtual-Chalk (*.vchalk)" (tiret) levait une
+    ValueError non rattrapée avant même l'ouverture de la boîte de
+    dialogue — le bouton "Ouvrir un projet" ne faisait alors
+    silencieusement rien, aucune erreur visible côté UI. On capture les
+    file_types réellement passés par Api.pick_project_file et on les fait
+    valider par le vrai parseur de pywebview plutôt que de dupliquer sa
+    regex, pour rester vrai si elle change un jour."""
+    from webview.util import parse_file_type
+
+    captured = {}
+
+    class FakeWindow:
+        def create_file_dialog(self, dialog_type, file_types=()):
+            captured["file_types"] = file_types
+            return None
+
+    monkeypatch.setattr(api_bridge.webview, "windows", [FakeWindow()])
+
+    api = api_bridge.Api.__new__(api_bridge.Api)
+    api.pick_project_file()
+
+    assert captured["file_types"], "aucun file_types capté"
+    for file_type in captured["file_types"]:
+        parse_file_type(file_type)  # ne doit lever aucune ValueError
+
+
 def _make_api(monkeypatch, project, tmp_path):
     api = api_bridge.Api.__new__(api_bridge.Api)
     api.settings = None

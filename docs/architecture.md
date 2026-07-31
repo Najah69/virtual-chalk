@@ -738,6 +738,38 @@ personnalisé auraient été silencieusement écrites dans un tout nouveau
 projet est toujours sauvegardé à l'emplacement canonique), donc le repli
 sur le nom deviné reste utilisé — et reste correct — dans ce cas précis.
 
+**Troisième bug trouvé en testant cette fonctionnalité, plus sévère** : le
+bouton "Ouvrir un projet..." ne faisait littéralement rien au clic —
+aucune boîte de dialogue, aucune erreur visible. Cause : pywebview valide
+côté Python le libellé de chaque filtre de fichier avec une regex
+(`webview.util.parse_file_type`, `^([\w ]+)\(...`) qui n'autorise ni
+tiret ni accent avant la parenthèse. Le libellé initial, "Projets
+Virtual-Chalk (\*.vchalk)" (tiret), levait donc une `ValueError` **avant
+même l'ouverture de la fenêtre native**, dans `Api.pick_project_file()` —
+exception non rattrapée côté `editor.js`/`app.js` (aucun try/catch sur
+l'appel), donc silencieuse pour l'utilisateur. Corrigé en renommant le
+libellé en "Fichiers projet" (aucun caractère hors `[A-Za-z0-9_ ]`) ; les
+deux autres filtres du projet (`pick_file`, `pick_and_encode_image`)
+n'avaient par chance jamais eu de tiret/accent dans leur libellé. Test de
+non-régression : `tests/test_open_project.py` fait valider les
+`file_types` réellement passés par le vrai parseur de pywebview plutôt
+que de dupliquer sa regex.
+
+### Navigation libre entre étapes de l'assistant
+
+La barre d'onglets (`ui/index.html`, `.steps-nav .step`) ne faisait que
+refléter l'étape courante (`goToStep` bascule juste la classe `active`) —
+aucun moyen de revenir en arrière, notamment à l'étape 1 pour modifier le
+texte/prompt initial une fois qu'on a avancé. Chaque onglet a maintenant
+`role="button" tabindex="0"` (accessible au clavier, Entrée/Espace gérés
+explicitement dans `app.js` puisqu'un `<div role="button">` ne réagit pas
+nativement aux touches contrairement à un vrai `<button>`) et un
+gestionnaire de clic appelant directement `goToStep(n)`. Navigation
+libre dans les deux sens, sans restriction — tous les panneaux
+(`.step-panel`) coexistent déjà dans le DOM en permanence, donc revenir
+en arrière ou sauter en avant ne perd ni ne recalcule rien (`goToStep` ne
+fait toujours que basculer une classe CSS).
+
 ### Édition par langage naturel (NL Editing)
 
 Une barre de commande sous l'éditeur (`editor.js`) accepte une instruction

@@ -10,6 +10,24 @@ function goToStep(n) {
   });
 }
 
+// Navigation libre entre étapes en cliquant directement sur leur onglet
+// (barre du haut) — pas seulement via les boutons "Continuer" qui
+// n'avancent que d'une étape. Utile notamment pour revenir à l'étape 1
+// (prompt initial) après avoir avancé, sans perdre le contenu déjà saisi
+// (goToStep ne fait que basculer la classe "active", rien n'est vidé).
+// role="button"/tabindex (voir index.html) rendent l'onglet focusable au
+// clavier, mais un div role="button" n'active pas Entrée/Espace tout
+// seul comme un vrai <button> — géré explicitement ici.
+document.querySelectorAll(".step").forEach((el) => {
+  el.addEventListener("click", () => goToStep(parseInt(el.dataset.step, 10)));
+  el.addEventListener("keydown", (evt) => {
+    if (evt.key === "Enter" || evt.key === " ") {
+      evt.preventDefault();
+      goToStep(parseInt(el.dataset.step, 10));
+    }
+  });
+});
+
 window.onPipelineProgress = function (step, fraction) {
   const label = { script: "Script...", diagram: "Schémas...", voice: "Voix...", render: "Animation...", encode: "Assemblage vidéo..." }[step] || step;
   document.getElementById("progress-label").textContent = label;

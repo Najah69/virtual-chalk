@@ -69,10 +69,19 @@ class Api:
     def pick_project_file(self) -> str | None:
         """Sélectionne un fichier projet existant (voir PROJECT_FILE_EXTENSION)
         à ouvrir dans l'éditeur — voir open_project_file, qui fait le
-        chargement + l'ouverture de la fenêtre Éditeur en une fois."""
+        chargement + l'ouverture de la fenêtre Éditeur en une fois.
+
+        Le libellé du filtre ne doit contenir NI tiret NI aucun caractère
+        hors [A-Za-z0-9_ ] avant la parenthèse : pywebview le valide côté
+        Python avec la regex util.py::parse_file_type, `^([\\w ]+)\\(...`,
+        qui n'autorise ni "-" ni accents dans le libellé — "Projets
+        Virtual-Chalk (...)" (tiret) lève une ValueError non rattrapée
+        avant même l'ouverture de la boîte de dialogue, sans aucun retour
+        visible côté UI (bug rencontré et corrigé ici : le bouton
+        "Ouvrir un projet" ne faisait alors littéralement rien)."""
         result = webview.windows[0].create_file_dialog(
             webview.OPEN_DIALOG,
-            file_types=(f"Projets Virtual-Chalk (*{PROJECT_FILE_EXTENSION})", "Tous les fichiers (*.*)"),
+            file_types=(f"Fichiers projet (*{PROJECT_FILE_EXTENSION})", "Tous les fichiers (*.*)"),
         )
         return result[0] if result else None
 
