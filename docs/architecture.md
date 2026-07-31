@@ -366,6 +366,21 @@ multilingue (repositionnement non recalculé) ; à corriger plus tard en
 réservant explicitement cette zone dans `resolve_overlaps` si ça s'avère
 gênant en usage réel.
 
+**Vérifié de bout en bout sur l'exe packagé** (pas seulement en test
+unitaire) : cycle complet désactivation → réactivation de la mascotte via
+`toggle_mascot` (commande NL "désactive/active la mascotte animée sur
+toutes les scènes") sur un vrai projet de 8 scènes déjà généré, avec une
+image insérée entre les deux (voir section suivante) pour confirmer que
+les deux fonctionnalités cohabitent sans se marcher dessus. Dans les deux
+sens, `Api.apply_edit_command` régénère bien la vidéo finale (mtime de
+`video.mp4` changé, `mascot_enabled` correctement mis à jour), et une
+frame extraite après coup montre la mascotte réellement absente/présente
+selon le sens du basculement. Réactiver la mascotte sur 8 scènes prend
+environ 232s (ré-encodage complet de chaque scène + concat) — un premier
+essai avait semblé bloqué après plusieurs minutes sans activité ffmpeg
+visible, mais un second essai a confirmé qu'il s'agissait simplement du
+temps normal de l'appel LLM + du rendu, pas d'un blocage réel.
+
 ### Diagrammes générés (image → vectorisation)
 
 Texte/icônes/animations ne suffisent pas à représenter un concept
