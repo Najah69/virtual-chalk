@@ -570,6 +570,23 @@ sous WebView2 (`ERR_FILE_NOT_FOUND`) — corrigé en passant ce chemin par le
 pont JS↔Python existant (`Api.get_current_project_path()`, lu par
 `editor.js` une fois `pywebviewready` déclenché) plutôt que par l'URL.
 
+**Journal des commandes** — le seul retour visible après une commande
+était une ligne de statut éphémère (`#nl-command-status`), écrasée par la
+commande suivante : impossible de vérifier après coup ce qu'une
+instruction ambiguë avait réellement fait, ou de retrouver la trace d'une
+action ignorée au milieu d'une commande à plusieurs actions. `editor.js`
+maintient maintenant `nlEditJournal`, un historique en mémoire (côté
+client, pas persisté dans le `.golpoproj` — vidé à la fermeture de
+l'éditeur) de chaque commande envoyée : horodatage, texte de la commande,
+résumé du résultat (succès / partiel — actions ignorées ou instruction
+sans effet / erreur de traduction LLM), et le détail lisible de chaque
+action réellement appliquée (`describeAction`, un texte par type d'action
+du vocabulaire de `app/edit/prompts.py`). Affiché dans un panneau
+`#nl-edit-journal` sous la barre de commande, plus récent en premier.
+Nécessitait d'exposer `applied_actions` (déjà présent côté
+`EditResult` mais jusque-là absent du dict JSON renvoyé par
+`Api.apply_edit_command`) en plus de `skipped_actions`.
+
 ## Arborescence
 
 ```

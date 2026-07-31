@@ -258,6 +258,7 @@ class Api:
                 "project": self._current_project.to_dict(),
                 "changed_scene_ids": [],
                 "theme_changed": False,
+                "applied_actions": [],
                 "skipped_actions": result.skipped_actions,
                 "error": result.error,
             }
@@ -283,6 +284,7 @@ class Api:
             "project": self._current_project.to_dict(),
             "changed_scene_ids": result.changed_scene_ids,
             "theme_changed": result.theme_changed,
+            "applied_actions": result.applied_actions,
             "skipped_actions": result.skipped_actions,
             "error": None,
         }
