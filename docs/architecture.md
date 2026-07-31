@@ -199,6 +199,27 @@ Deux couleurs (terre brune, pour chalk_board et whiteboard_marker) ont été
 ajoutées aux palettes de thème pour permettre ce mapping — elles entrent
 aussi dans la rotation classique, ce qui ajoute au passage de la variété.
 
+**Hiérarchie de recoloration par kind de stroke** — la palette cyclique
+(`palette[i % len(palette)]`) convient à des icônes/formes ponctuelles
+mais pas à du texte lu en continu : certaines couleurs de palette restent
+techniquement lisibles sur le fond du thème sans être confortables à lire
+(ex: le rose ou le jaune vif de chalk_board). `THEME_TEXT_COLORS` dans
+`app/render/theme_registry.py` définit donc, par thème, une courte liste
+de couleurs "sûres" dédiées au texte (`["#ffffff", "#ffe66d"]` pour
+chalk_board, `["#1a1a1a", "#1f5fd1"]` pour whiteboard_marker), exposée via
+`text_color_for_theme(theme_id, index)`. La règle de recoloration
+appliquée uniformément par `strokes_from_visual_elements` (génération
+initiale) et `_recolor_strokes_for_theme` (`app/edit/nl_commands.py`,
+appelé par `set_theme`) est :
+
+- `kind == "text"` → `text_color_for_theme`, avec un compteur dédié
+  (indépendant de l'index global des éléments) pour alterner entre les
+  couleurs sûres sans dépendre de ce qui a été placé avant dans la scène.
+- `kind in ("icon", "animation")` → couleur sémantique si connue, sinon
+  repli sur la palette cyclique (inchangé).
+- `kind in ("shape", "diagram")` → palette cyclique (dessin libre ou
+  diagramme déjà vectorisé, la couleur y est purement décorative).
+
 ### Disposition (éviter les chevauchements texte/dessin)
 
 Retour utilisateur : le texte peut empiéter sur une icône ou une
@@ -608,6 +629,43 @@ suppose du latin gauche-à-droite) et une police manuscrite arabe avec
 shaping contextuel (opentype.js le supporte en théorie si la police a les
 bonnes tables GSUB, non vérifié) — un sous-chantier à part entière plutôt
 qu'une simple langue de plus.
+
+## Tests
+
+`tests/` (pytest, `pytest.ini` à la racine) couvre la logique métier pure
+plutôt que l'UI ou le rendu vidéo réel — aucun test n'effectue de vrai
+appel réseau/LLM/TTS ni de vrai rendu ffmpeg/capture d'écran :
+
+- `test_llm_base.py` — robustesse de `LLMProvider.complete_json` (JSON
+  pur, JSON entouré de texte parasite, réponse inexploitable →
+  `LLMJsonError`).
+- `test_nl_commands.py` — résolution sûre de `scene_id`/index dans
+  l'édition NL (`Project.find_scene`, action inconnue/index hors limites
+  ignorés sans casser la commande), et hiérarchie de recoloration par
+  kind de stroke (`_recolor_strokes_for_theme`).
+- `test_translate.py` — `translate_project` ne mute jamais le `Project`
+  source, propage `LLMJsonError` sans construire de résultat partiel.
+- `test_github_ingestion.py` — `app/ingestion/github.py` : parsing
+  d'URL, README manquant, dépôt introuvable (404), limite de requêtes
+  (403/429), erreur réseau — toutes simulées via un `requests.get` factice.
+- `test_render_cache.py` — logique de cache de `render_all`
+  (`app/render/partial_render.py`) : ne re-rend que les scènes dont le
+  `content_hash` a changé ou dont le fichier caché a disparu, mais
+  retourne toujours le chemin de **toutes** les scènes dans l'ordre —
+  verrouille le bug historique corrigé pendant cette session (scènes
+  inchangées silencieusement absentes du montage final). `render_scene`
+  y est entièrement simulé (pas de vraie capture/encodage).
+- `test_api_bridge_voice_fallback.py` — `Api.start_pipeline` retombe sur
+  `_DEFAULT_VOICE_PROFILE` si `voice_profile_name` ne correspond à aucun
+  profil connu, plutôt que de laisser `None` se propager. `Pipeline.run`
+  y est entièrement simulé.
+
+`tests/conftest.py` fournit `FakeLLMProvider` (sous-classe de
+`LLMProvider` qui rejoue une liste de réponses brutes préparées à
+l'avance au lieu d'appeler un vrai modèle), réutilisé par les tests LLM/
+NL editing/traduction. Lancer la suite : `pytest` depuis la racine du
+dépôt (nécessite `pip install -r requirements.txt`, `pytest` y est listé
+en dépendance de dev).
 
 ## Reporté
 

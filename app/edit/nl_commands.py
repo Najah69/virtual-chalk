@@ -20,8 +20,8 @@ import uuid
 from dataclasses import dataclass, field
 
 from app.edit.prompts import EDIT_SYSTEM_PROMPT, build_edit_user_prompt
-from app.llm.base import LLMProvider
-from app.render.theme_registry import palette_for_theme, semantic_color_for_icon
+from app.llm.base import LLMJsonError, LLMProvider
+from app.render.theme_registry import palette_for_theme, semantic_color_for_icon, text_color_for_theme
 from app.scenes.schema import Project, Scene, strokes_from_visual_elements
 
 logger = logging.getLogger(__name__)
@@ -48,6 +48,11 @@ class EditResult:
     theme_changed: bool = False
     applied_actions: list[dict] = field(default_factory=list)
     skipped_actions: list[dict] = field(default_factory=list)
+    # Message utilisateur si la traduction commande -> JSON a echoue (voir
+    # LLMJsonError) : le Project reste alors strictement inchange (aucune
+    # action n'a pu etre evaluee), l'UI affiche ce message plutot que de
+    # planter ou de rester silencieuse — voir ui/editor/editor.js.
+    error: str | None = None
 
 
 def _resolve_index(project: Project, index: int) -> int:
@@ -80,11 +85,27 @@ def _recolor_strokes_for_theme(project: Project, theme: str) -> None:
     du thème d'ALORS (voir strokes_from_visual_elements) — sans ce
     recalcul, changer de thème via set_theme laisserait des strokes avec
     la couleur de l'ancien thème (ex: blanc, valide sur fond vert craie,
-    devient du texte blanc invisible sur fond blanc feutre)."""
+    devient du texte blanc invisible sur fond blanc feutre).
+
+    Hiérarchie de recoloration par kind (même logique que
+    strokes_from_visual_elements) :
+    - "text" : une des quelques couleurs "sûres" du thème
+      (text_color_for_theme), jamais la palette cyclique complète — un
+      texte a besoin d'un contraste garanti, pas d'une teinte pensée pour
+      une icône ponctuelle.
+    - "icon"/"animation" : couleur sémantique si connue (eau=bleu,
+      vegetation=vert...), sinon repli sur la palette cyclique.
+    - "shape"/"diagram" : palette cyclique — ce sont des tracés déjà
+      résolus géométriquement (diagramme vectorisé, dessin libre), la
+      variation de couleur y est purement décorative."""
     palette = palette_for_theme(theme)
     for scene in project.scenes:
+        text_index = 0
         for i, stroke in enumerate(scene.strokes):
-            if stroke.kind in ("icon", "animation"):
+            if stroke.kind == "text":
+                stroke.color = text_color_for_theme(theme, text_index)
+                text_index += 1
+            elif stroke.kind in ("icon", "animation"):
                 stroke.color = semantic_color_for_icon(stroke.text, theme) or palette[i % len(palette)]
             else:
                 stroke.color = palette[i % len(palette)]
@@ -152,8 +173,19 @@ def apply_nl_edit_command(project: Project, command_text: str, llm: LLMProvider)
     applique au Project, dans l'ordre. Une action individuelle invalide
     (index hors limites, thème inconnu...) est ignorée et journalisée
     plutôt que de faire échouer toute la commande si le LLM en a produit
-    plusieurs dont une seule est mauvaise."""
-    data = llm.complete_json(EDIT_SYSTEM_PROMPT, build_edit_user_prompt(project, command_text))
+    plusieurs dont une seule est mauvaise. Si le modèle ne renvoie rien
+    d'exploitable en JSON (LLMJsonError), le Project n'est pas touché : on
+    retourne un EditResult vide avec un message d'erreur plutôt que de
+    laisser l'exception remonter et casser l'appelant."""
+    try:
+        data = llm.complete_json(EDIT_SYSTEM_PROMPT, build_edit_user_prompt(project, command_text))
+    except LLMJsonError as exc:
+        logger.warning("Traduction de la commande d'édition impossible : %s", exc)
+        return EditResult(
+            project=project,
+            error="Le modèle n'a pas renvoyé une réponse exploitable — réessayez ou reformulez la commande.",
+        )
+
     result = EditResult(project=project)
 
     for action in data.get("actions", []):

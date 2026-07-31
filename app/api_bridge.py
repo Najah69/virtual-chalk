@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 from pathlib import Path
 from typing import Any
 
@@ -24,6 +25,8 @@ from app.tts.base import TTSProvider, VoiceProfile
 from app.tts.gemini_tts import GeminiTTSProvider
 from app.tts.sapi_local import SapiLocalProvider
 from app.tts.voice_profiles import list_voice_profiles
+
+logger = logging.getLogger(__name__)
 
 # Repli utilise quand aucun profil de voix n'a ete choisi dans cette session
 # (ex: projet charge depuis un .golpoproj sans etre repasse par
@@ -90,6 +93,19 @@ class Api:
                         github_content_kind: str | None = None) -> dict[str, Any]:
         text = normalize_source(source)
         profile = next((p for p in list_voice_profiles() if p.name == voice_profile_name), None)
+        if profile is None:
+            # voice_profile_name ne correspond a aucun profil connu (liste
+            # de voix systeme changee entre-temps, valeur perimee envoyee
+            # par l'UI...) : repli explicite sur un profil valide plutot
+            # que de laisser None se propager jusqu'a TTSProvider.synthesize
+            # — les providers actuels tolerent deja None en pratique, mais
+            # ce repli evite une degradation SILENCIEUSE (l'utilisateur a
+            # choisi une voix precise, il doit obtenir un profil reel, pas
+            # juste "ce qui ne plante pas").
+            logger.warning(
+                "Profil de voix %r introuvable, repli sur le profil par défaut", voice_profile_name,
+            )
+            profile = _DEFAULT_VOICE_PROFILE
         pipeline = self._build_pipeline(profile)
         content_kind = github_content_kind if source.get("type") == "github" else None
 
@@ -235,9 +251,27 @@ class Api:
         result = apply_nl_edit_command(self._current_project, command_text, pipeline.llm)
         self._current_project = result.project
 
+        if result.error:
+            # Traduction commande -> JSON impossible (voir LLMJsonError) :
+            # le Project n'a pas bouge, rien a re-synthetiser/re-rendre.
+            return {
+                "project": self._current_project.to_dict(),
+                "changed_scene_ids": [],
+                "theme_changed": False,
+                "skipped_actions": result.skipped_actions,
+                "error": result.error,
+            }
+
         voice_profile = self._current_voice_profile or _DEFAULT_VOICE_PROFILE
         for scene_id in result.voice_changed_scene_ids:
-            scene = next(s for s in self._current_project.scenes if s.scene_id == scene_id)
+            # Le scene_id peut ne plus exister si une action ulterieure de
+            # la meme commande a supprime cette scene (ex: "raccourcis la
+            # scene 2 et supprime-la ensuite") — find_scene ne leve jamais
+            # de StopIteration, contrairement a un next() non garde.
+            scene = self._current_project.find_scene(scene_id)
+            if scene is None:
+                logger.warning("Scène %s introuvable pour la re-synthèse (ignorée)", scene_id)
+                continue
             pipeline.resynthesize_scene(scene, voice_profile)
 
         if result.changed_scene_ids or result.theme_changed:
@@ -250,4 +284,5 @@ class Api:
             "changed_scene_ids": result.changed_scene_ids,
             "theme_changed": result.theme_changed,
             "skipped_actions": result.skipped_actions,
+            "error": None,
         }

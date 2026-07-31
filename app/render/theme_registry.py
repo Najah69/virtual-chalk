@@ -45,6 +45,19 @@ THEME_SEMANTIC_COLORS = {
     },
 }
 
+# Couleurs de texte "sûres" (contraste garanti avec le fond du thème),
+# utilisées pour les strokes de kind "text" au lieu de la rotation de
+# palette complète — celle-ci contient des teintes pensées pour des
+# icônes/formes ponctuelles, pas pour du texte à lire en continu (ex: le
+# jaune ou le rose de chalk_board restent lisibles sur fond vert craie,
+# mais sont moins confortables à lire qu'un blanc/craie classique). Un
+# minimum de variation (2 couleurs) évite un rendu trop monotone quand
+# plusieurs textes apparaissent dans la même scène.
+THEME_TEXT_COLORS = {
+    "chalk_board": ["#ffffff", "#ffe66d"],
+    "whiteboard_marker": ["#1a1a1a", "#1f5fd1"],
+}
+
 
 def tool_for_theme(theme_id: str) -> str:
     return THEME_TOOLS.get(theme_id, "chalk")
@@ -52,6 +65,17 @@ def tool_for_theme(theme_id: str) -> str:
 
 def palette_for_theme(theme_id: str) -> list[str]:
     return THEME_PALETTES.get(theme_id, THEME_PALETTES["chalk_board"])
+
+
+def text_color_for_theme(theme_id: str, index: int = 0) -> str:
+    """Couleur à utiliser pour un stroke de kind "text" dans ce thème —
+    toujours l'une des quelques couleurs "sûres" de THEME_TEXT_COLORS
+    (jamais la palette cyclique complète, réservée aux icônes/diagrammes/
+    animations). `index` fait juste alterner entre les couleurs sûres
+    pour éviter un aplat visuel monotone quand plusieurs textes
+    coexistent dans une scène."""
+    colors = THEME_TEXT_COLORS.get(theme_id, THEME_TEXT_COLORS["chalk_board"])
+    return colors[index % len(colors)]
 
 
 def semantic_color_for_icon(icon_name: str, theme_id: str) -> str | None:

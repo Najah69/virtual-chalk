@@ -105,7 +105,14 @@ def translate_project(project: Project, target_lang: str, llm: LLMProvider) -> P
     """Traduit project vers target_lang (voir LANGUAGE_NAMES pour les
     langues supportées). Ne touche ni aux durées de scène (recalculées par
     Pipeline.synthesize_voices une fois la voix re-synthétisée dans la
-    langue cible) ni aux icônes/animations/diagrammes déjà résolus."""
+    langue cible) ni aux icônes/animations/diagrammes déjà résolus.
+
+    Ne mute JAMAIS `project` : construit systématiquement de nouveaux
+    Scene/Exercise (copies) et renvoie un Project neuf. Si le LLM ne
+    renvoie pas de JSON exploitable, `llm.complete_json` lève LLMJsonError
+    *avant* toute construction — le projet source appelant reste donc
+    intact dans tous les cas, l'erreur est simplement laissée remonter à
+    l'appelant (voir Api.export_translated, déjà attrapée côté UI)."""
     language = LANGUAGE_NAMES.get(target_lang)
     if not language:
         raise ValueError(f"Langue cible non supportée : {target_lang!r}")

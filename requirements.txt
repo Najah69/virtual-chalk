@@ -9,3 +9,6 @@ Pillow>=10.0
 pydantic>=2.6
 opencv-python-headless>=4.9
 numpy>=1.26
+
+# Dev / tests uniquement (pas nécessaire pour l'exe packagé)
+pytest>=8.0

@@ -5,7 +5,7 @@ from dataclasses import asdict, dataclass, field
 from typing import Any, Literal
 
 from app.render.layout import resolve_overlaps
-from app.render.theme_registry import palette_for_theme, semantic_color_for_icon
+from app.render.theme_registry import palette_for_theme, semantic_color_for_icon, text_color_for_theme
 
 CANVAS_WIDTH = 1920
 CANVAS_HEIGHT = 1080
@@ -121,6 +121,7 @@ def strokes_from_visual_elements(elements: list[dict[str, Any]], theme: str) -> 
     se chevauche avant de figer leur position finale dans les Stroke."""
     palette = palette_for_theme(theme)
     planned: list[dict[str, Any]] = []
+    text_index = 0
     for i, el in enumerate(elements):
         el_type = el.get("type")
         x = (float(el.get("x", 50)) / 100.0) * CANVAS_WIDTH
@@ -131,7 +132,9 @@ def strokes_from_visual_elements(elements: list[dict[str, Any]], theme: str) -> 
             content = str(el.get("content", "")).strip()
             if not content:
                 continue
-            planned.append({"kind": "text", "x": x, "y": y, "size": TEXT_STROKE_WIDTH, "content": content, "name": "", "color": color})
+            text_color = text_color_for_theme(theme, text_index)
+            text_index += 1
+            planned.append({"kind": "text", "x": x, "y": y, "size": TEXT_STROKE_WIDTH, "content": content, "name": "", "color": text_color})
         elif el_type == "icon":
             name = str(el.get("name", "")).strip()
             if name not in ICON_NAMES:
@@ -176,6 +179,14 @@ class Project:
     def slug(self) -> str:
         base = re.sub(r"[^a-z0-9]+", "-", self.title.lower()).strip("-")
         return base or "virtual-chalk-project"
+
+    def find_scene(self, scene_id: str) -> Scene | None:
+        """Retrouve une scène par id, ou None si absente — jamais de
+        StopIteration non attrapée. Utile quand le scene_id vient d'une
+        source qui peut référencer une scène qui n'existe plus (ex: une
+        action d'édition NL qui en supprime une après qu'une action
+        précédente de la même commande l'a marquée comme modifiée)."""
+        return next((s for s in self.scenes if s.scene_id == scene_id), None)
 
     def scene_start_times(self) -> dict[str, float]:
         """Instant absolu (dans la video concatenee finale) ou commence

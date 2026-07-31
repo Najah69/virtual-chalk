@@ -37,17 +37,46 @@ def _parse_owner_repo(repo_url: str) -> tuple[str, str]:
     raise GitHubIngestionError(f"URL de dépôt GitHub invalide : {repo_url!r}")
 
 
+def _raise_for_rate_limit_or_error(response: requests.Response, context: str) -> None:
+    """Transforme un statut HTTP d'erreur en GitHubIngestionError lisible
+    plutôt que de laisser fuir une requests.HTTPError brute — 403/429
+    signifient très souvent une limite de requêtes GitHub API atteinte
+    (anonyme : 60 requêtes/heure), un message générique "erreur HTTP"
+    serait trompeur pour l'utilisateur final."""
+    if response.status_code in (403, 429):
+        raise GitHubIngestionError(
+            f"Limite de requêtes GitHub atteinte (statut {response.status_code}) en "
+            f"{context} — réessayez dans quelques minutes."
+        )
+    if response.status_code >= 400:
+        raise GitHubIngestionError(f"Erreur GitHub (statut {response.status_code}) en {context}.")
+
+
 def _fetch_raw_file(owner: str, repo: str, path: str, ref: str) -> str | None:
+    """Retourne le contenu du fichier, ou None si absent (404 — cas normal,
+    l'appelant essaie le candidat suivant). Toute autre erreur (réseau,
+    timeout, limite de requêtes) est une vraie panne, pas une simple
+    absence de fichier : elle remonte en GitHubIngestionError plutôt que
+    d'être confondue avec un "aucun README trouvé" silencieux."""
     url = f"https://raw.githubusercontent.com/{owner}/{repo}/{ref}/{path}"
-    response = requests.get(url, timeout=15)
-    return response.text if response.status_code == 200 else None
+    try:
+        response = requests.get(url, timeout=15)
+    except requests.RequestException as exc:
+        raise GitHubIngestionError(f"Impossible de contacter GitHub pour récupérer {path!r} : {exc}") from exc
+    if response.status_code == 404:
+        return None
+    _raise_for_rate_limit_or_error(response, context=f"la récupération de {path!r}")
+    return response.text
 
 
 def _default_branch(owner: str, repo: str) -> str:
-    response = requests.get(f"{GITHUB_API}/repos/{owner}/{repo}", timeout=15)
+    try:
+        response = requests.get(f"{GITHUB_API}/repos/{owner}/{repo}", timeout=15)
+    except requests.RequestException as exc:
+        raise GitHubIngestionError(f"Impossible de contacter l'API GitHub pour {owner}/{repo} : {exc}") from exc
     if response.status_code == 404:
         raise GitHubIngestionError(f"Dépôt introuvable ou privé : {owner}/{repo}")
-    response.raise_for_status()
+    _raise_for_rate_limit_or_error(response, context=f"la lecture des informations de {owner}/{repo}")
     return response.json().get("default_branch") or "main"
 
 

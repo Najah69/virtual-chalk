@@ -27,8 +27,15 @@ def render_scene(project: Project, scene_id: str, scenes_dir: Path) -> Path:
     réutiliser sans la re-rendre (cache), et pour que la vidéo finale
     reste reconstructible à tout moment à partir de ce qui existe
     réellement sur le disque. Rend INCONDITIONNELLEMENT (pas de vérification
-    de hash ici — voir `render_all` pour la logique de cache)."""
-    scene = next(s for s in project.scenes if s.scene_id == scene_id)
+    de hash ici — voir `render_all` pour la logique de cache).
+
+    Lève ValueError (pas StopIteration) si scene_id n'existe pas dans
+    project.scenes — un message explicite plutôt qu'une exception de bas
+    niveau, utile si l'appelant transmet un id périmé (scène supprimée
+    entre-temps)."""
+    scene = project.find_scene(scene_id)
+    if scene is None:
+        raise ValueError(f"Scène introuvable : {scene_id!r}")
     compute_stroke_timings(scene)
 
     capture = FrameCapture(get_render_window())
