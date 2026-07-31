@@ -50,11 +50,32 @@
         } else if (stroke.kind === "icon" && stroke.text) {
           const anchor = stroke.points[0];
           stroke.points = window.iconToPoints(stroke.text, anchor.x, anchor.y, stroke.width);
+        } else if (stroke.kind === "image" && stroke.image_data) {
+          // Décodage asynchrone (même un data URI n'est pas garanti
+          // synchrone) : Python attend window.allImagesReady() avant de
+          // lancer le rendu des frames (voir capture.py) plutôt que
+          // d'appeler loadScene en async — testé empiriquement,
+          // evaluate_js ne résout pas correctement une Promise renvoyée.
+          stroke._imageReady = false;
+          const img = new Image();
+          img.onload = () => { stroke._imageReady = true; };
+          img.onerror = () => { stroke._imageReady = true; stroke._imageEl = null; };
+          img.src = stroke.image_data;
+          stroke._imageEl = img;
         }
         stroke._lastDrawnCount = 0;
       }
       const { width, height } = canvas;
       window.SURFACES[currentTheme.surface](ctx, width, height);
+    };
+
+    // Vrai dès que tous les strokes "image" de la scène courante ont fini
+    // de décoder (ou ont échoué) — voir loadScene. Vrai trivialement s'il
+    // n'y en a aucun, pour que Python n'attende jamais inutilement.
+    window.allImagesReady = function () {
+      return (currentScene && currentScene.strokes || []).every(
+        (s) => s.kind !== "image" || s._imageReady
+      );
     };
 
     // Appelé par Python pour chaque frame, avec le temps virtuel écoulé (s).
@@ -88,6 +109,19 @@
           if (fn) {
             const boardTexture = window._boardTextureCache[currentTheme.surface] || null;
             fn(ctx, stroke, t - stroke.start_sec, boardTexture, currentTheme.tool);
+          }
+          if (t >= stroke.end_sec) stroke._frozen = true;
+        } else if (stroke.kind === "image") {
+          // Pas de tracé progressif possible pour un bitmap (contrairement
+          // au texte/icônes) : simple fondu d'apparition (globalAlpha),
+          // puis figé — comme les animations, jamais retouché une fois
+          // end_sec dépassé.
+          if (stroke._frozen) continue;
+          if (stroke._imageEl) {
+            ctx.save();
+            ctx.globalAlpha = progress;
+            ctx.drawImage(stroke._imageEl, stroke.points[0].x, stroke.points[0].y, stroke.width, stroke.height);
+            ctx.restore();
           }
           if (t >= stroke.end_sec) stroke._frozen = true;
         } else {

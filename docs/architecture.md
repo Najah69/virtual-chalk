@@ -418,6 +418,73 @@ produit aucun contour exploitable, le diagramme est simplement retiré de
 la scène (`Pipeline.generate_diagrams`, `try/except` par diagramme) plutôt
 que de faire échouer toute la génération vidéo pour un seul schéma manqué.
 
+### Insertion d'images (bitmap/vecteur)
+
+Depuis l'éditeur (`ui/editor/`), bouton "Insérer une image" : sélectionne
+un fichier (PNG/JPG/GIF/WEBP/SVG), le place sur la scène sélectionnée via
+des champs numériques x/y/largeur/hauteur en pourcentage (pas de glisser-
+déposer — l'éditeur n'a pas encore de rendu live par élément dans
+`canvas-preview`, TODO préexistant, non construit ici pour rester dans le
+périmètre de cette tâche), puis re-rend immédiatement la scène.
+
+**`Stroke.kind = "image"`** réutilise le reste du modèle existant :
+`points[0]` = ancre haut-gauche (même convention que icône/diagramme),
+`width`/`height` = taille d'affichage en pixels canvas, nouveau champ
+`image_data` = l'image encodée en **data URI base64** (bitmap ou SVG, même
+mécanisme pour les deux). Aucun nouveau champ sur `Scene`/`Project` : le
+cache de rendu (`content_hash`), la sérialisation (`to_dict`/`from_dict`)
+et le `.golpoproj` fonctionnent donc sans modification particulière — au
+passage, la reconstruction manuelle de `Stroke` dans `Project.from_dict`
+oubliait déjà `height` avant cette tâche (bug préexistant, corrigé ici en
+même temps que l'ajout d'`image_data` puisque les deux touchent la même
+ligne).
+
+**Pourquoi base64 et pas un chemin de fichier** (décision prise avant
+d'écrire le code, vérifiée empiriquement) : la fenêtre de rendu charge
+`web_template/index.html` en `file://`, et capture chaque frame via
+`canvas.toDataURL()` (voir `capture.py`). Dessiner sur ce canvas une image
+chargée depuis un **autre** `file://` le rend "tainted" (Chromium traite
+chaque `file://` comme une origine distincte) : `toDataURL()` lèverait
+alors une `SecurityError`, cassant la capture de **toutes** les frames
+suivantes — pas seulement celles avec une image. Une image encodée en
+data URI reste same-origin pour le canvas, donc sans ce risque. La
+lecture du fichier et l'encodage base64 se font côté Python
+(`Api.pick_and_encode_image`, I/O sans restriction) plutôt que par le JS
+de l'éditeur (page `file://`, `fetch()` d'un autre `file://` non fiable
+sous Chromium — non plus testé mais écarté par prudence au profit d'une
+solution déjà connue pour marcher).
+
+**Décodage asynchrone, capture bloquante** : même un data URI n'est pas
+décodé de façon garantie synchrone par le navigateur (vérifié
+empiriquement : `evaluate_js` de pywebview ne résout pas correctement une
+Promise renvoyée par une fonction JS `async`, donc `window.loadScene` ne
+peut pas simplement `await` le décodage et laisser Python attendre le
+retour). À la place, `loadScene` lance le décodage en fire-and-forget
+(`Image.onload`) et expose `window.allImagesReady()` ; `FrameCapture`
+(`capture.py::_wait_for_images_ready`) fait un petit nombre
+d'aller-retours `evaluate_js` en attendant `true` (quelques millisecondes
+en pratique pour une image déjà en mémoire, testé), avec un timeout de
+sécurité de 5s pour ne jamais bloquer indéfiniment. No-op immédiat pour
+toute scène sans stroke "image".
+
+**Rendu** (`web_template/index.html::renderAtTime`) : pas de tracé
+progressif possible pour un bitmap (contrairement au texte/icônes) —
+simple fondu d'apparition (`globalAlpha`) puis figé une fois `end_sec`
+dépassé, même principe `_frozen` que les animations. `timing.py` n'a eu
+besoin d'aucune modification : un stroke "image" n'a qu'un point
+(l'ancre), donc `_path_length` retombe déjà sur son minimum
+(`MIN_DRAW_SECONDS`), un comportement de repli générique déjà correct
+pour ce cas.
+
+**H5P** : aucune modification nécessaire — l'image est déjà gravée dans
+les pixels de la vidéo MP4 rendue avant `export_h5p`, comme les
+diagrammes vectorisés.
+
+Vérifié de bout en bout avec le vrai pipeline de capture (`FrameCapture`
+piloté directement, pas seulement `evaluate_js` isolé) : image affichée à
+la bonne position/taille à côté d'une icône dans la même scène, aucune
+`SecurityError` sur les 180 frames capturées.
+
 ### Sons de craie
 
 `app/render/chalk_audio.py` synthétise un pool de tapotements de craie

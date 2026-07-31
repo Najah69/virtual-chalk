@@ -65,11 +65,21 @@ class Stroke:
     points: list[Point]
     color: str
     width: float
-    kind: Literal["text", "shape", "icon", "animation", "diagram"] = "shape"
+    kind: Literal["text", "shape", "icon", "animation", "diagram", "image"] = "shape"
     text: str = ""
     height: float = 0.0
     start_sec: float = 0.0
     end_sec: float = 0.0
+    # Uniquement pour kind="image" : l'image (bitmap ou SVG) encodée en
+    # data URI base64, jamais un chemin de fichier — le canvas de rendu
+    # (web_template/index.html) est chargé en file://, et y dessiner une
+    # image chargée depuis un AUTRE file:// le "tainte" (origine distincte
+    # pour Chromium), cassant canvas.toDataURL() — donc la capture de
+    # toutes les frames suivantes — pour le reste du rendu (voir
+    # docs/architecture.md, section Mascotte/Images). points[0] sert
+    # d'ancrage haut-gauche (même convention que icon/diagram),
+    # width/height la taille d'affichage en pixels canvas.
+    image_data: str = ""
 
 
 @dataclass
@@ -322,7 +332,8 @@ class Project:
             strokes = [
                 Stroke(points=[Point(**p) for p in st["points"]], color=st["color"],
                        width=st["width"], kind=st.get("kind", "shape"), text=st.get("text", ""),
-                       start_sec=st.get("start_sec", 0.0), end_sec=st.get("end_sec", 0.0))
+                       height=st.get("height", 0.0), start_sec=st.get("start_sec", 0.0),
+                       end_sec=st.get("end_sec", 0.0), image_data=st.get("image_data", ""))
                 for st in s.get("strokes", [])
             ]
             mascot_timeline = [MascotAction(**m) for m in s.get("mascot_timeline", [])]

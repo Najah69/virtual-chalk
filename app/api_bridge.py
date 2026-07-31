@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import base64
 import logging
+import mimetypes
 from pathlib import Path
 from typing import Any
 
@@ -19,7 +21,7 @@ from app.llm.prompts import DEFAULT_VIDEO_PROFILE, VIDEO_PROFILES
 from app.paths import UI_DIR
 from app.pipeline import GenerationRequest, Pipeline
 from app.scenes.project_file import load_project_file, save_project_file
-from app.scenes.schema import Exercise
+from app.scenes.schema import CANVAS_HEIGHT, CANVAS_WIDTH, Exercise, Point, Stroke
 from app.settings import Settings, get_api_key
 from app.tts.base import TTSProvider, VoiceProfile
 from app.tts.gemini_tts import GeminiTTSProvider
@@ -54,6 +56,24 @@ class Api:
     def pick_output_folder(self) -> str | None:
         result = webview.windows[0].create_file_dialog(webview.FOLDER_DIALOG)
         return result[0] if result else None
+
+    def pick_and_encode_image(self) -> dict[str, Any] | None:
+        """Sélectionne une image (bitmap ou vecteur) et la retourne déjà
+        encodée en data URI (base64) — la lecture/l'encodage se font ici,
+        côté Python (I/O fichier normale, aucune restriction), plutôt que
+        de faire lire un chemin de fichier arbitraire par le JS de
+        l'éditeur (page chargée en file://, fetch()/XHR d'un autre file://
+        n'est pas fiable sous Chromium). None si l'utilisateur annule."""
+        result = webview.windows[0].create_file_dialog(
+            webview.OPEN_DIALOG,
+            file_types=("Images (*.png;*.jpg;*.jpeg;*.gif;*.webp;*.svg)", "Tous les fichiers (*.*)"),
+        )
+        if not result:
+            return None
+        path = Path(result[0])
+        mime_type = mimetypes.guess_type(path.name)[0] or "application/octet-stream"
+        encoded = base64.b64encode(path.read_bytes()).decode("ascii")
+        return {"name": path.name, "data_uri": f"data:{mime_type};base64,{encoded}"}
 
     def get_settings(self) -> dict[str, Any]:
         from dataclasses import asdict
@@ -187,6 +207,35 @@ class Api:
         video_path = pipeline.rerender_scene(self._current_project, scene_id, self._current_project_dir)
         self._current_video_path = video_path
         return str(video_path)
+
+    def insert_image(self, scene_id: str, image_data: str, x_pct: float, y_pct: float,
+                      width_pct: float, height_pct: float) -> dict[str, Any]:
+        """Ajoute un stroke kind="image" à la scène ciblée puis re-rend
+        immédiatement (comme apply_edit_command) pour que le résultat soit
+        visible sans action supplémentaire. `image_data` est déjà un data
+        URI base64 fourni par editor.js (jamais un chemin de fichier — voir
+        Stroke.image_data pour la raison : canvas "tainted" par un file://
+        étranger à web_template/index.html). x_pct/y_pct/width_pct/
+        height_pct sont en pourcentage du tableau, même convention que les
+        éléments visuels générés par le LLM (strokes_from_visual_elements)."""
+        if not self._current_project or not self._current_project_dir:
+            raise RuntimeError("Aucun projet à éditer")
+        scene = self._current_project.find_scene(scene_id)
+        if scene is None:
+            raise ValueError(f"Scène introuvable : {scene_id!r}")
+
+        x = (x_pct / 100.0) * CANVAS_WIDTH
+        y = (y_pct / 100.0) * CANVAS_HEIGHT
+        width = (width_pct / 100.0) * CANVAS_WIDTH
+        height = (height_pct / 100.0) * CANVAS_HEIGHT
+        scene.strokes.append(Stroke(
+            points=[Point(x, y)], color="", width=width, height=height,
+            kind="image", image_data=image_data,
+        ))
+
+        video_path = self.rerender_scene(scene_id)
+        save_project_file(self._current_project, self._current_project_dir / "project.golpoproj")
+        return {"project": self._current_project.to_dict(), "video_path": video_path}
 
     def open_editor(self) -> None:
         """Ouvre l'écran Éditeur (ui/editor/) dans une nouvelle fenêtre.

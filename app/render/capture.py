@@ -3,6 +3,7 @@ from __future__ import annotations
 import base64
 import json
 import tempfile
+import time
 from dataclasses import asdict
 from pathlib import Path
 
@@ -12,6 +13,15 @@ from app.scenes.schema import Scene
 
 FPS = 30
 TEMPLATE_URL = "web_template/index.html"
+
+# Un stroke kind="image" décode son image de façon asynchrone côté JS
+# (voir web_template/index.html::loadScene — même un data URI n'est pas
+# garanti synchrone, et evaluate_js ne résout pas correctement une Promise
+# renvoyée, testé empiriquement). Délai maximal d'attente avant de rendre
+# quand même (mieux vaut une image manquante sur une frame qu'un pipeline
+# qui reste bloqué indéfiniment sur un décodage qui ne se termine jamais).
+IMAGE_DECODE_TIMEOUT_SEC = 5.0
+IMAGE_DECODE_POLL_INTERVAL_SEC = 0.05
 
 # Nombre de frames rendues et capturées en un seul aller-retour JS<->Python.
 # Un evaluate_js par frame individuelle mesure ~300ms/frame (surcoût d'IPC,
@@ -39,6 +49,7 @@ class FrameCapture:
         self.window.evaluate_js(
             f"window.loadScene({json.dumps(asdict(scene))}, {json.dumps(theme)})"
         )
+        self._wait_for_images_ready()
 
         n = 0
         while n < frame_count:
@@ -53,3 +64,16 @@ class FrameCapture:
             n += batch
 
         return out_dir
+
+    def _wait_for_images_ready(self) -> None:
+        """No-op immédiat si la scène n'a aucun stroke "image" (voir
+        window.allImagesReady). Sinon, laisse le moteur JS quelques
+        allers-retours pour terminer le décodage avant de commencer à
+        capturer des frames — sans quoi les premières frames dessineraient
+        une image absente (rien à drawImage) même si elle finit par être
+        prête un peu plus tard."""
+        deadline = time.monotonic() + IMAGE_DECODE_TIMEOUT_SEC
+        while not self.window.evaluate_js("window.allImagesReady()"):
+            if time.monotonic() >= deadline:
+                break
+            time.sleep(IMAGE_DECODE_POLL_INTERVAL_SEC)

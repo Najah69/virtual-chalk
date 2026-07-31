@@ -84,6 +84,46 @@ document.getElementById("btn-rerender-scene").addEventListener("click", async ()
   await window.pywebview.api.rerender_scene(selectedSceneId);
 });
 
+// Image en attente d'insertion (choisie mais pas encore ajoutée à une
+// scène) : {name, data_uri}, déjà lue et encodée en base64 côté Python
+// (voir Api.pick_and_encode_image) — jamais un chemin de fichier, cf.
+// Stroke.image_data pour la raison (canvas "tainted" en file://).
+let pickedImage = null;
+
+document.getElementById("btn-pick-image").addEventListener("click", async () => {
+  const status = document.getElementById("image-insert-status");
+  status.textContent = "";
+  const picked = await window.pywebview.api.pick_and_encode_image();
+  if (!picked) return;
+  pickedImage = picked;
+  document.getElementById("image-picked-name").textContent = picked.name;
+  document.getElementById("btn-insert-image").disabled = false;
+});
+
+document.getElementById("btn-insert-image").addEventListener("click", async () => {
+  const status = document.getElementById("image-insert-status");
+  if (!selectedSceneId || !pickedImage) return;
+
+  const xPct = parseFloat(document.getElementById("image-x-pct").value) || 0;
+  const yPct = parseFloat(document.getElementById("image-y-pct").value) || 0;
+  const widthPct = parseFloat(document.getElementById("image-width-pct").value) || 25;
+  const heightPct = parseFloat(document.getElementById("image-height-pct").value) || 25;
+
+  status.textContent = "Insertion et re-rendu en cours...";
+  try {
+    const result = await window.pywebview.api.insert_image(
+      selectedSceneId, pickedImage.data_uri, xPct, yPct, widthPct, heightPct
+    );
+    currentProject = result.project;
+    status.textContent = "Image insérée et scène re-rendue.";
+    pickedImage = null;
+    document.getElementById("image-picked-name").textContent = "";
+    document.getElementById("btn-insert-image").disabled = true;
+  } catch (err) {
+    status.textContent = `Erreur : ${err}`;
+  }
+});
+
 document.getElementById("btn-nl-apply").addEventListener("click", async () => {
   const input = document.getElementById("nl-command-input");
   const status = document.getElementById("nl-command-status");
