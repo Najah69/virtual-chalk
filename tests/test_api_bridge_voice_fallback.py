@@ -30,6 +30,7 @@ def _make_api(monkeypatch, known_profiles):
     api = api_bridge.Api.__new__(api_bridge.Api)  # évite Settings.load() (I/O disque)
     api.settings = None
     api._current_project = None
+    api._current_project_path = None
     api._current_project_dir = None
     api._current_video_path = None
     api._current_voice_profile = None

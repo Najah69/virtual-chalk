@@ -69,6 +69,7 @@ def _make_api(monkeypatch, project, project_dir):
     api = api_bridge.Api.__new__(api_bridge.Api)
     api.settings = None
     api._current_project = project
+    api._current_project_path = None
     api._current_project_dir = project_dir
     api._current_video_path = None
     api._current_voice_profile = None

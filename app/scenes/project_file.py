@@ -7,10 +7,13 @@ from app.scenes.project_store import dumps, loads
 from app.scenes.schema import Project
 
 PROJECT_JSON_NAME = "project.json"
+# Extension du fichier projet éditable (voir save_project_file) — anciennement
+# .golpoproj, renommée pour ne plus dépendre d'un nom hérité d'un autre outil.
+PROJECT_FILE_EXTENSION = ".vchalk"
 
 
 def save_project_file(project: Project, path: Path) -> None:
-    """.golpoproj = zip {project.json, audio/*.wav} — le MP4 n'y est pas
+    """.vchalk = zip {project.json, audio/*.wav} — le MP4 n'y est pas
     inclus, il est toujours régénérable à partir de ce fichier."""
     with zipfile.ZipFile(path, "w", zipfile.ZIP_DEFLATED) as zf:
         zf.writestr(PROJECT_JSON_NAME, dumps(project))

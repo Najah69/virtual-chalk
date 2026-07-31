@@ -56,6 +56,16 @@ document.getElementById("btn-pick-file").addEventListener("click", async () => {
   }
 });
 
+// "Ouvrir un projet..." : sélectionne un fichier projet existant (.vchalk)
+// et ouvre directement l'éditeur dessus (Api.open_project_file combine
+// chargement + ouverture de fenêtre), sans passer par l'assistant.
+document.getElementById("btn-open-project").addEventListener("click", async () => {
+  const path = await window.pywebview.api.pick_project_file();
+  if (path) {
+    await window.pywebview.api.open_project_file(path);
+  }
+});
+
 // Determine la source a envoyer au pipeline selon ce que l'utilisateur a
 // rempli, par ordre de priorite (fichier choisi > URL GitHub > URL simple >
 // texte colle) — avant ce correctif, seul le texte colle etait jamais

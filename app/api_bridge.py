@@ -20,7 +20,7 @@ from app.llm.openrouter import OpenRouterProvider
 from app.llm.prompts import DEFAULT_VIDEO_PROFILE, VIDEO_PROFILES
 from app.paths import UI_DIR
 from app.pipeline import GenerationRequest, Pipeline
-from app.scenes.project_file import load_project_file, save_project_file
+from app.scenes.project_file import PROJECT_FILE_EXTENSION, load_project_file, save_project_file
 from app.scenes.schema import CANVAS_HEIGHT, CANVAS_WIDTH, Exercise, Point, Stroke
 from app.settings import Settings, get_api_key
 from app.tts.base import TTSProvider, VoiceProfile
@@ -31,7 +31,7 @@ from app.tts.voice_profiles import list_voice_profiles
 logger = logging.getLogger(__name__)
 
 # Repli utilise quand aucun profil de voix n'a ete choisi dans cette session
-# (ex: projet charge depuis un .golpoproj sans etre repasse par
+# (ex: projet charge depuis un .vchalk sans etre repasse par
 # start_pipeline) — gratuit et local, jamais d'appel reseau surprise.
 _DEFAULT_VOICE_PROFILE = VoiceProfile(name="Voix Windows par défaut", provider="sapi_local")
 
@@ -43,6 +43,15 @@ class Api:
         self.settings = Settings.load()
         self._current_project = None
         self._current_project_dir: Path | None = None
+        # Chemin exact du fichier .vchalk chargé (voir load_project) —
+        # distinct de _current_project_dir (le dossier, utilisé pour la
+        # sauvegarde/le rendu, toujours "project.vchalk" par convention
+        # pour un projet généré). Un fichier ouvert via "Ouvrir un projet"
+        # peut avoir n'importe quel nom/emplacement ; reconstruire son
+        # chemin en devinant "{dir}/project.vchalk" (ancien comportement
+        # de get_current_project_path) échouait silencieusement dès que
+        # ce n'était pas le cas.
+        self._current_project_path: Path | None = None
         self._current_video_path: Path | None = None
         self._current_voice_profile: VoiceProfile | None = None
 
@@ -55,6 +64,16 @@ class Api:
 
     def pick_output_folder(self) -> str | None:
         result = webview.windows[0].create_file_dialog(webview.FOLDER_DIALOG)
+        return result[0] if result else None
+
+    def pick_project_file(self) -> str | None:
+        """Sélectionne un fichier projet existant (voir PROJECT_FILE_EXTENSION)
+        à ouvrir dans l'éditeur — voir open_project_file, qui fait le
+        chargement + l'ouverture de la fenêtre Éditeur en une fois."""
+        result = webview.windows[0].create_file_dialog(
+            webview.OPEN_DIALOG,
+            file_types=(f"Projets Virtual-Chalk (*{PROJECT_FILE_EXTENSION})", "Tous les fichiers (*.*)"),
+        )
         return result[0] if result else None
 
     def pick_and_encode_image(self) -> dict[str, Any] | None:
@@ -197,8 +216,33 @@ class Api:
     def load_project(self, path: str) -> dict[str, Any]:
         project = load_project_file(Path(path))
         self._current_project = project
+        self._current_project_path = Path(path)
         self._current_project_dir = Path(path).parent
+        existing_video = self._current_project_dir / "video.mp4"
+        self._current_video_path = existing_video if existing_video.exists() else None
         return project.to_dict()
+
+    def _current_project_save_path(self) -> Path:
+        """Où sauvegarder le projet courant après une édition — le fichier
+        exact qui a été ouvert (_current_project_path, voir load_project)
+        s'il est connu, sinon l'emplacement canonique "project{EXT}" utilisé
+        par une génération fraîche (start_pipeline ne renseigne jamais
+        _current_project_path, voir get_current_project_path). Sans ça, un
+        projet ouvert sous un autre nom que "project{EXT}" verrait ses
+        éditions sauvegardées dans un tout autre fichier que celui ouvert."""
+        if self._current_project_path:
+            return self._current_project_path
+        return self._current_project_dir / f"project{PROJECT_FILE_EXTENSION}"
+
+    def open_project_file(self, path: str) -> None:
+        """Charge un fichier projet existant puis ouvre directement la
+        fenêtre Éditeur dessus — combine load_project + open_editor en un
+        seul appel pour le bouton "Ouvrir un projet" de l'assistant et
+        pour le lancement de l'exe via association de fichier (voir
+        main.py, qui appelle cette méthode si un chemin est passé en
+        argument au lancement)."""
+        self.load_project(path)
+        self.open_editor()
 
     def rerender_scene(self, scene_id: str) -> str:
         if not self._current_project or not self._current_project_dir:
@@ -234,7 +278,7 @@ class Api:
         ))
 
         video_path = self.rerender_scene(scene_id)
-        save_project_file(self._current_project, self._current_project_dir / "project.golpoproj")
+        save_project_file(self._current_project, self._current_project_save_path())
         return {"project": self._current_project.to_dict(), "video_path": video_path}
 
     def open_editor(self) -> None:
@@ -249,9 +293,20 @@ class Api:
         webview.create_window("Virtual-Chalk — Éditeur", url=editor_url.as_uri(), js_api=self, width=1200, height=760)
 
     def get_current_project_path(self) -> str | None:
+        """Chemin du .vchalk à recharger côté editor.js (voir sa gestion de
+        pywebviewready). Préfère le chemin exact suivi depuis
+        load_project (_current_project_path) — nécessaire dès que le
+        fichier ouvert ne s'appelle pas "project{EXT}" (voir
+        Api.open_project_file) — sinon reconstruit le chemin canonique
+        "{dossier}/project{EXT}", correct pour un projet fraîchement
+        généré par start_pipeline (toujours sauvegardé à cet emplacement,
+        voir Pipeline.run) mais qui n'a jamais mis à jour
+        _current_project_path."""
+        if self._current_project_path:
+            return str(self._current_project_path)
         if not self._current_project_dir:
             return None
-        return str(self._current_project_dir / "project.golpoproj")
+        return str(self._current_project_dir / f"project{PROJECT_FILE_EXTENSION}")
 
     def export_translated(self, target_lang: str) -> dict[str, Any]:
         """Traduit le projet courant (app/i18n/translate.py) puis
@@ -275,7 +330,7 @@ class Api:
         out_dir.mkdir(parents=True, exist_ok=True)
         video_path = pipeline.render(translated, out_dir)
         h5p_path = pipeline.export_h5p(translated, video_path, out_dir)
-        save_project_file(translated, out_dir / "project.golpoproj")
+        save_project_file(translated, out_dir / f"project{PROJECT_FILE_EXTENSION}")
 
         return {
             "title": translated.title,
@@ -327,7 +382,7 @@ class Api:
         if result.changed_scene_ids or result.theme_changed:
             self._current_video_path = pipeline.render(self._current_project, self._current_project_dir)
 
-        save_project_file(self._current_project, self._current_project_dir / "project.golpoproj")
+        save_project_file(self._current_project, self._current_project_save_path())
 
         return {
             "project": self._current_project.to_dict(),

@@ -12,7 +12,7 @@ en local dans un seul processus.
 - **Sobriété** : un seul appel LLM par génération de script, aucune édition
   dans l'UI ne consomme de tokens, re-rendu partiel scène par scène plutôt
   que tout régénérer.
-- **Projet vectoriel éditable** : le fichier projet (`.golpoproj`) est la
+- **Projet vectoriel éditable** : le fichier projet (`.vchalk`) est la
   source de vérité (scènes, tracés vectoriels, timings). Le MP4 est un
   artefact toujours régénérable, pas la donnée maîtresse.
 - **UX simple** : assistant linéaire en 5 étapes pour un utilisateur non
@@ -320,7 +320,7 @@ timeline pour toutes les scènes et met `mascot_enabled = True` ;
 `remove_mascot_timeline(project)` vide toutes les timelines et remet
 `mascot_enabled = False` — jamais d'état intermédiaire incohérent
 (timeline non vide mais mascotte "désactivée") persisté dans le
-`.golpoproj`.
+`.vchalk`.
 
 **Génération initiale** (`Pipeline.run`) : si `GenerationRequest.mascot_enabled`,
 `add_mascot_timeline` est appelé après `generate_diagrams` (pas avant) —
@@ -448,7 +448,7 @@ périmètre de cette tâche), puis re-rend immédiatement la scène.
 `image_data` = l'image encodée en **data URI base64** (bitmap ou SVG, même
 mécanisme pour les deux). Aucun nouveau champ sur `Scene`/`Project` : le
 cache de rendu (`content_hash`), la sérialisation (`to_dict`/`from_dict`)
-et le `.golpoproj` fonctionnent donc sans modification particulière — au
+et le `.vchalk` fonctionnent donc sans modification particulière — au
 passage, la reconstruction manuelle de `Stroke` dans `Project.from_dict`
 oubliait déjà `height` avant cette tâche (bug préexistant, corrigé ici en
 même temps que l'ajout d'`image_data` puisque les deux touchent la même
@@ -654,7 +654,7 @@ interactive utilisable sans configuration manuelle.
 
 Un dossier par projet, un sous-dossier par langue à l'intérieur —
 `{réglages.default_output_dir}/{slug}/{lang}/` (`fr` par défaut, `en` pour
-une traduction) contenant `video.mp4`, `video.h5p`, `project.golpoproj` et
+une traduction) contenant `video.mp4`, `video.h5p`, `project.vchalk` et
 un sous-dossier `scenes/{scene_id}.mp4` (cache par scène, voir plus bas).
 `Pipeline.project_dir(slug, lang)` calcule/crée ce chemin ; toutes les
 autres méthodes (`render`, `export_h5p`, `rerender_scene`) reçoivent ce
@@ -686,6 +686,57 @@ scène sélectionnée, panneau de propriétés (texte, couleur, position,
 durée). Bouton "re-render cette scène" vs "re-render tout" —
 `render/partial_render.py` ne régénère que ce qui a changé (et ne rappelle
 le TTS que si le texte a changé).
+
+### Ouvrir un projet existant
+
+Deux façons d'arriver à l'éditeur sur un projet déjà généré, sans repasser
+par l'assistant :
+
+- **Bouton "Ouvrir un projet..."** (barre du haut, `ui/index.html`) :
+  `Api.pick_project_file()` (sélecteur de fichier filtré sur
+  `PROJECT_FILE_EXTENSION`) puis `Api.open_project_file(path)`, qui
+  combine `load_project` (charge le `.vchalk`, restaure aussi
+  `_current_video_path` s'il existe déjà un `video.mp4` à côté) et
+  `open_editor` en un seul appel.
+- **Association de fichier** : double-clic sur un `.vchalk` dans
+  l'Explorateur lance `virtual-chalk.exe "chemin\vers\le\fichier.vchalk"`
+  — Windows passe le chemin en premier argument. `app/main.py` lit
+  `sys.argv[1]` au démarrage et appelle `Api.open_project_file` dessus
+  avant `webview.start()` si l'extension correspond, pour ouvrir
+  directement l'éditeur (la fenêtre assistant reste quand même créée en
+  arrière-plan, comme pour un `open_editor()` classique). L'association
+  Windows -> `virtual-chalk.exe` elle-même est enregistrée par
+  l'installeur (`build/installer.iss`, section `[Registry]`, ProgID
+  `VirtualChalkProject`) ; Windows 10/11 exige malgré tout un choix
+  explicite de l'utilisateur ("Ouvrir avec" → "Toujours utiliser") pour
+  qu'une extension déjà associée à autre chose bascule vers
+  Virtual-Chalk — l'installeur ne fait que proposer le programme.
+
+**Bug corrigé au passage** : avant cette fonctionnalité, il n'existait
+tout simplement aucun moyen de rouvrir un `.vchalk` existant — ni menu
+dans l'assistant, ni prise en compte de `sys.argv` par `main.py` (associer
+manuellement l'extension à l'exe ne faisait donc rien : Windows lançait
+bien le programme, mais avec le chemin du fichier silencieusement ignoré).
+
+**Deuxième bug trouvé en testant cette fonctionnalité** :
+`Api.get_current_project_path()` (lu par `editor.js` au démarrage pour
+recharger le projet) reconstruisait un chemin deviné
+`"{dossier}/project{EXT}"` au lieu de retenir le chemin réellement ouvert
+— correct par coïncidence pour un projet fraîchement généré (toujours
+sauvegardé sous ce nom exact par `Pipeline.run`), mais silencieusement
+faux dès qu'un `.vchalk` est ouvert sous un autre nom (renommé par
+l'utilisateur, reçu de quelqu'un d'autre...) : `editor.js` rechargeait
+alors un fichier inexistant et la liste des scènes restait vide sans
+message d'erreur. Corrigé en ajoutant `Api._current_project_path`
+(chemin exact suivi depuis `load_project`), utilisé en priorité par
+`get_current_project_path()` et par la sauvegarde après édition
+(`_current_project_save_path()`, utilisé par `apply_edit_command` et
+`insert_image`) — sans quoi les éditions d'un projet ouvert sous un nom
+personnalisé auraient été silencieusement écrites dans un tout nouveau
+`project{EXT}` à côté plutôt que dans le fichier réellement ouvert.
+`start_pipeline` ne renseigne toujours pas ce champ (aucun besoin, son
+projet est toujours sauvegardé à l'emplacement canonique), donc le repli
+sur le nom deviné reste utilisé — et reste correct — dans ce cas précis.
 
 ### Édition par langage naturel (NL Editing)
 
@@ -722,9 +773,9 @@ d'ailleurs maintenant les strokes existants avec la palette du nouveau
 thème (`_recolor_strokes_for_theme`) — sans ça, un stroke coloré blanc
 pour le tableau craie restait blanc après passage au tableau blanc feutre
 (texte invisible sur fond blanc), et surtout son hash ne changeait pas
-donc `render` l'aurait ignoré. Le `.golpoproj` est re-sauvegardé après coup.
+donc `render` l'aurait ignoré. Le `.vchalk` est re-sauvegardé après coup.
 
-**Piège rencontré** : passer le chemin du `.golpoproj` à éditer en query
+**Piège rencontré** : passer le chemin du `.vchalk` à éditer en query
 string sur l'URL `file://...editor.html?project=...` échoue silencieusement
 sous WebView2 (`ERR_FILE_NOT_FOUND`) — corrigé en passant ce chemin par le
 pont JS↔Python existant (`Api.get_current_project_path()`, lu par
@@ -736,7 +787,7 @@ commande suivante : impossible de vérifier après coup ce qu'une
 instruction ambiguë avait réellement fait, ou de retrouver la trace d'une
 action ignorée au milieu d'une commande à plusieurs actions. `editor.js`
 maintient maintenant `nlEditJournal`, un historique en mémoire (côté
-client, pas persisté dans le `.golpoproj` — vidé à la fermeture de
+client, pas persisté dans le `.vchalk` — vidé à la fermeture de
 l'éditeur) de chaque commande envoyée : horodatage, texte de la commande,
 résumé du résultat (succès / partiel — actions ignorées ou instruction
 sans effet / erreur de traduction LLM), et le détail lisible de chaque
@@ -788,7 +839,7 @@ complète dans la langue cible — la voix Gemini détecte la langue depuis
 le texte, aucun paramètre de langue explicite nécessaire côté TTS) →
 `Pipeline.render()` (re-rendu complet, les durées de scène changent avec
 la nouvelle voix) → `Pipeline.export_h5p()`. Fichiers de sortie nommés
-d'après le slug du titre traduit (`{slug-en}.mp4`/`.h5p`/`.golpoproj`),
+d'après le slug du titre traduit (`{slug-en}.mp4`/`.h5p`/`.vchalk`),
 jamais de collision avec la version française qui reste inchangée.
 
 **Limite v1 assumée** : le texte traduit garde exactement la position de

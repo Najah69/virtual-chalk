@@ -264,7 +264,7 @@ def remove_mascot_timeline(project: "Project") -> None:
     """Inverse de add_mascot_timeline : vide le timeline de chaque scène
     plutôt que de les laisser en place désactivés — un timeline non vide
     mais ignoré au rendu serait un état incohérent à faire vivre dans le
-    .golpoproj."""
+    .vchalk."""
     for scene in project.scenes:
         scene.mascot_timeline = []
     project.mascot_enabled = False

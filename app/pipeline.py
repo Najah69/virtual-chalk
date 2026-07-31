@@ -13,7 +13,7 @@ from app.llm.prompts import DEFAULT_VIDEO_PROFILE
 from app.render.diagram_generator import DIAGRAM_LINE_WIDTH, generate_diagram_points
 from app.render.ffmpeg_wrapper import concat_scenes
 from app.render.partial_render import render_all, render_scene
-from app.scenes.project_file import save_project_file
+from app.scenes.project_file import PROJECT_FILE_EXTENSION, save_project_file
 from app.scenes.schema import Project, Scene, add_mascot_timeline
 from app.tts.base import TTSProvider, VoiceProfile
 
@@ -173,7 +173,7 @@ class Pipeline:
         self.synthesize_voices(project, request.voice_profile, on_progress)
         out_dir = self.project_dir(project.slug, DEFAULT_LANGUAGE)
         video_path = self.render(project, out_dir, on_progress)
-        save_project_file(project, out_dir / "project.golpoproj")
+        save_project_file(project, out_dir / f"project{PROJECT_FILE_EXTENSION}")
         h5p_path = self.export_h5p(project, video_path, out_dir) if request.export_h5p else None
         return PipelineResult(project=project, project_dir=out_dir, video_path=video_path, h5p_path=h5p_path)
 
