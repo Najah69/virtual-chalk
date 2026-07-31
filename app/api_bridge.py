@@ -90,7 +90,7 @@ class Api:
 
     def start_pipeline(self, source: dict[str, Any], voice_profile_name: str, export_h5p: bool,
                         theme: str = "chalk_board", script_profile: str = DEFAULT_VIDEO_PROFILE,
-                        github_content_kind: str | None = None) -> dict[str, Any]:
+                        github_content_kind: str | None = None, mascot_enabled: bool = False) -> dict[str, Any]:
         text = normalize_source(source)
         profile = next((p for p in list_voice_profiles() if p.name == voice_profile_name), None)
         if profile is None:
@@ -116,7 +116,7 @@ class Api:
 
         request = GenerationRequest(
             source_text=text, voice_profile=profile, theme=theme, script_profile=script_profile,
-            github_content_kind=content_kind, export_h5p=export_h5p,
+            github_content_kind=content_kind, export_h5p=export_h5p, mascot_enabled=mascot_enabled,
         )
         result = pipeline.run(request, on_progress=on_progress)
         self._current_project = result.project

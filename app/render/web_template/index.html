@@ -24,11 +24,13 @@
   <script src="icon_to_path.js"></script>
   <script src="icon_sprite.js"></script>
   <script src="animations.js"></script>
+  <script src="mascot.js"></script>
   <script>
     const canvas = document.getElementById("stage");
     const ctx = canvas.getContext("2d");
     let currentScene = null;
     let currentTheme = null;
+    let currentThemeId = null;
 
     // Appelé par Python (FrameCapture) avant de rendre les frames d'une scène.
     // Les strokes de type "texte" n'arrivent qu'avec un point d'ancrage
@@ -40,6 +42,7 @@
     window.loadScene = function (scene, themeId) {
       currentScene = scene;
       currentTheme = window.getTheme(themeId);
+      currentThemeId = themeId;
       for (const stroke of currentScene.strokes || []) {
         if (stroke.kind === "text" && stroke.text) {
           const anchor = stroke.points[0];
@@ -90,6 +93,10 @@
         } else {
           drawStroke(ctx, stroke, progress);
         }
+      }
+      if (currentScene.mascot_timeline && currentScene.mascot_timeline.length) {
+        const boardTexture = window._boardTextureCache[currentTheme.surface] || null;
+        window.drawMascot(ctx, currentScene, t, boardTexture, canvas.width, canvas.height, currentThemeId);
       }
     };
 

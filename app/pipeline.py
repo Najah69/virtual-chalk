@@ -14,7 +14,7 @@ from app.render.diagram_generator import DIAGRAM_LINE_WIDTH, generate_diagram_po
 from app.render.ffmpeg_wrapper import concat_scenes
 from app.render.partial_render import render_all, render_scene
 from app.scenes.project_file import save_project_file
-from app.scenes.schema import Project, Scene
+from app.scenes.schema import Project, Scene, add_mascot_timeline
 from app.tts.base import TTSProvider, VoiceProfile
 
 logger = logging.getLogger(__name__)
@@ -48,6 +48,7 @@ class GenerationRequest:
     script_profile: str = DEFAULT_VIDEO_PROFILE
     github_content_kind: str | None = None
     export_h5p: bool = False
+    mascot_enabled: bool = False
 
 
 class Pipeline:
@@ -164,6 +165,11 @@ class Pipeline:
     def run(self, request: GenerationRequest, on_progress: ProgressCallback = None) -> PipelineResult:
         project = self.generate_project(request, on_progress)
         self.generate_diagrams(project, on_progress)
+        if request.mascot_enabled:
+            # Après generate_diagrams (et non avant) : un diagramme retiré
+            # faute de génération réussie (voir generate_diagrams) ne doit
+            # pas être choisi comme cible de "point" par la mascotte.
+            add_mascot_timeline(project)
         self.synthesize_voices(project, request.voice_profile, on_progress)
         out_dir = self.project_dir(project.slug, DEFAULT_LANGUAGE)
         video_path = self.render(project, out_dir, on_progress)

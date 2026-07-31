@@ -73,6 +73,23 @@ class Stroke:
 
 
 @dataclass
+class MascotAction:
+    """Une phase du comportement de la mascotte animée pendant une scène —
+    voir default_mascot_timeline() pour comment un Scene.mascot_timeline
+    complet est construit. target_x/target_y sont en pixels canvas (même
+    convention que Point.x/y, PAS un pourcentage — voir
+    strokes_from_visual_elements qui convertit déjà le pourcentage reçu du
+    LLM en pixels avant de construire les Stroke/Point) ; ne sont utilisés
+    que par action_type "point", ignorés sinon."""
+
+    action_type: Literal["appear", "wave", "point", "idle", "disappear"]
+    start_sec: float
+    end_sec: float
+    target_x: float = 0.0
+    target_y: float = 0.0
+
+
+@dataclass
 class Scene:
     scene_id: str
     voice_over: str
@@ -82,6 +99,12 @@ class Scene:
     strokes: list[Stroke] = field(default_factory=list)
     audio_path: str = ""
     content_hash: str = ""
+    # Vide si la mascotte est désactivée pour ce projet (voir
+    # Project.mascot_enabled) — jamais rempli par le LLM de génération de
+    # script, toujours calculé déterministiquement par
+    # default_mascot_timeline() une fois la scène connue (durée, éléments
+    # visuels déjà placés).
+    mascot_timeline: list[MascotAction] = field(default_factory=list)
 
 
 @dataclass
@@ -166,6 +189,77 @@ def strokes_from_visual_elements(elements: list[dict[str, Any]], theme: str) -> 
     ]
 
 
+# Durée (s) de chaque phase d'entrée/sortie de la mascotte — assez courte
+# pour ne pas manger le temps utile d'une scène courte, mais perceptible.
+MASCOT_TRANSITION_SEC = 0.6
+# Durée minimale (s) qu'il doit rester après la phase d'apparition pour
+# que la mascotte tente de désigner un élément ("point") ; en dessous, la
+# scène est trop courte pour que ce geste soit lisible, elle reste en idle.
+MASCOT_MIN_POINT_WINDOW_SEC = 1.0
+
+
+def default_mascot_timeline(scene: Scene, greet: bool = False) -> list[MascotAction]:
+    """Construit un enchaînement de phases (apparition, salut ou pointage
+    vers un élément déjà placé, attente, disparition) déterministe à
+    partir de ce qui est déjà connu de la scène (durée, éléments visuels
+    déjà positionnés) — jamais d'appel LLM supplémentaire : la mascotte
+    n'invente aucun contenu, elle ne fait que réagir à ce qui existe déjà.
+
+    `greet` distingue la toute première scène du projet (salut de
+    bienvenue) des suivantes (comportement neutre)."""
+    duration = max(scene.duration_sec, 0.1)
+    appear_end = min(MASCOT_TRANSITION_SEC, duration * 0.25)
+    disappear_start = max(appear_end, duration - min(MASCOT_TRANSITION_SEC, duration * 0.25))
+
+    timeline = [MascotAction(action_type="appear", start_sec=0.0, end_sec=appear_end)]
+
+    cursor = appear_end
+    if greet and disappear_start - cursor > MASCOT_MIN_POINT_WINDOW_SEC:
+        wave_end = min(cursor + MASCOT_TRANSITION_SEC * 1.5, disappear_start)
+        timeline.append(MascotAction(action_type="wave", start_sec=cursor, end_sec=wave_end))
+        cursor = wave_end
+
+    # Pointe vers le premier élément visuel non textuel déjà positionné
+    # (icône, animation, diagramme) : ancrage direct sur son point d'ancrage
+    # (déjà en pourcentage du tableau, même convention que MascotAction).
+    target = next((s for s in scene.strokes if s.kind in ("icon", "animation", "diagram")), None)
+    if target is not None and disappear_start - cursor > MASCOT_MIN_POINT_WINDOW_SEC:
+        point_end = cursor + (disappear_start - cursor) * 0.5
+        anchor = target.points[0]
+        timeline.append(MascotAction(
+            action_type="point", start_sec=cursor, end_sec=point_end,
+            target_x=anchor.x, target_y=anchor.y,
+        ))
+        cursor = point_end
+
+    if disappear_start > cursor:
+        timeline.append(MascotAction(action_type="idle", start_sec=cursor, end_sec=disappear_start))
+
+    timeline.append(MascotAction(action_type="disappear", start_sec=disappear_start, end_sec=duration))
+    return timeline
+
+
+def add_mascot_timeline(project: "Project") -> None:
+    """Calcule et affecte scene.mascot_timeline pour CHAQUE scène du
+    projet (écrase un éventuel timeline existant) — appelé une fois à la
+    génération initiale si mascot_enabled, ou par l'action d'édition NL
+    "toggle_mascot" pour (ré)activer la mascotte après coup. Idempotent :
+    rappelable sans effet de bord cumulatif."""
+    for i, scene in enumerate(project.scenes):
+        scene.mascot_timeline = default_mascot_timeline(scene, greet=(i == 0))
+    project.mascot_enabled = True
+
+
+def remove_mascot_timeline(project: "Project") -> None:
+    """Inverse de add_mascot_timeline : vide le timeline de chaque scène
+    plutôt que de les laisser en place désactivés — un timeline non vide
+    mais ignoré au rendu serait un état incohérent à faire vivre dans le
+    .golpoproj."""
+    for scene in project.scenes:
+        scene.mascot_timeline = []
+    project.mascot_enabled = False
+
+
 @dataclass
 class Project:
     title: str
@@ -174,6 +268,7 @@ class Project:
     scenes: list[Scene]
     theme: str = "chalk_board"
     exercises: list[Exercise] = field(default_factory=list)
+    mascot_enabled: bool = False
 
     @property
     def slug(self) -> str:
@@ -230,9 +325,11 @@ class Project:
                        start_sec=st.get("start_sec", 0.0), end_sec=st.get("end_sec", 0.0))
                 for st in s.get("strokes", [])
             ]
-            scenes.append(Scene(**{**s, "strokes": strokes}))
+            mascot_timeline = [MascotAction(**m) for m in s.get("mascot_timeline", [])]
+            scenes.append(Scene(**{**s, "strokes": strokes, "mascot_timeline": mascot_timeline}))
         exercises = [Exercise(**ex) for ex in data.get("exercises", [])]
         return cls(
             title=data["title"], summary=data["summary"], sections=sections,
             scenes=scenes, theme=data.get("theme", "chalk_board"), exercises=exercises,
+            mascot_enabled=data.get("mascot_enabled", False),
         )

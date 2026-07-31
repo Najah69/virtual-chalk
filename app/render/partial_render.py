@@ -16,7 +16,10 @@ ProgressCallback = Optional[Callable[[str, float], None]]
 
 
 def _hash_scene(scene: Scene) -> str:
-    payload = f"{scene.voice_over}|{scene.duration_sec}|{[s.__dict__ for s in scene.strokes]}"
+    payload = (
+        f"{scene.voice_over}|{scene.duration_sec}|{[s.__dict__ for s in scene.strokes]}"
+        f"|{[m.__dict__ for m in scene.mascot_timeline]}"
+    )
     return hashlib.sha256(payload.encode("utf-8")).hexdigest()
 
 

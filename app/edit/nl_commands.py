@@ -22,7 +22,14 @@ from dataclasses import dataclass, field
 from app.edit.prompts import EDIT_SYSTEM_PROMPT, build_edit_user_prompt
 from app.llm.base import LLMJsonError, LLMProvider
 from app.render.theme_registry import palette_for_theme, semantic_color_for_icon, text_color_for_theme
-from app.scenes.schema import Project, Scene, strokes_from_visual_elements
+from app.scenes.schema import (
+    Project,
+    Scene,
+    add_mascot_timeline,
+    default_mascot_timeline,
+    remove_mascot_timeline,
+    strokes_from_visual_elements,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -143,6 +150,11 @@ def _apply_insert_scene(project: Project, action: dict, result: EditResult) -> N
         visual_instruction="",
         strokes=strokes_from_visual_elements(action.get("visual_elements", []), project.theme),
     )
+    if project.mascot_enabled:
+        # La scène vient d'être créée, pas encore insérée dans
+        # project.scenes : jamais "greet" (réservé à la toute première
+        # scène du projet, déjà saluée si elle existe).
+        scene.mascot_timeline = default_mascot_timeline(scene, greet=False)
     project.scenes.insert(before_index, scene)
     result.changed_scene_ids.append(scene.scene_id)
     result.voice_changed_scene_ids.append(scene.scene_id)
@@ -158,6 +170,18 @@ def _apply_replace_scene_content(project: Project, action: dict, result: EditRes
     result.changed_scene_ids.append(scene.scene_id)
 
 
+def _apply_toggle_mascot(project: Project, action: dict, result: EditResult) -> None:
+    enabled = bool(action["enabled"])
+    if enabled == project.mascot_enabled:
+        return  # Déjà dans l'état demandé : aucune scène à re-rendre.
+    (add_mascot_timeline if enabled else remove_mascot_timeline)(project)
+    # Toutes les scènes voient leur content_hash changer (mascot_timeline
+    # ajouté/vidé) : les lister ici déclenche Pipeline.render côté
+    # api_bridge.py (voir Api.apply_edit_command) — le choix fin de ce qui
+    # est réellement re-rendu reste décidé par render_all via le hash.
+    result.changed_scene_ids.extend(scene.scene_id for scene in project.scenes)
+
+
 _ACTION_HANDLERS = {
     "update_scene_duration": _apply_update_scene_duration,
     "set_theme": _apply_set_theme,
@@ -165,6 +189,7 @@ _ACTION_HANDLERS = {
     "move_scene": _apply_move_scene,
     "insert_scene": _apply_insert_scene,
     "replace_scene_content": _apply_replace_scene_content,
+    "toggle_mascot": _apply_toggle_mascot,
 }
 
 

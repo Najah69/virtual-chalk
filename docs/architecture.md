@@ -288,6 +288,84 @@ gouttes différentes d'une frame à l'autre, gel correct après `end_sec`,
 et absence d'interférence avec un texte positionné ailleurs et apparu
 après le gel.
 
+### Mascotte animée
+
+Personnage optionnel (case "Ajouter une mascotte animée" à l'étape 3 de
+l'assistant, ou commande NL Editing "active/désactive la mascotte") qui
+apparaît en coin bas-gauche du tableau, réagit brièvement au contenu de
+chaque scène, puis disparaît. Contrairement aux animations à stroke
+unique (`falling_rain`) qui rejouent la même boucle du début à la fin de
+leur fenêtre active, la mascotte enchaîne plusieurs **phases**
+successives au sein d'une même scène.
+
+**Schéma** (`app/scenes/schema.py`) : `Scene.mascot_timeline: list[MascotAction]`,
+chaque `MascotAction` = `{action_type: "appear"|"wave"|"point"|"idle"|"disappear",
+start_sec, end_sec, target_x, target_y}` (target_x/y en pixels canvas,
+utilisés uniquement par `"point"`). `Project.mascot_enabled: bool`
+reflète l'état courant, pour que l'UI et l'édition NL puissent l'afficher/
+le faire évoluer sans avoir à inspecter toutes les scènes.
+
+**Timeline déterministe, jamais générée par le LLM**
+(`default_mascot_timeline()`) : la mascotte ne fait que réagir à des
+données déjà connues (durée de la scène, premier élément visuel non
+textuel déjà positionné par `strokes_from_visual_elements`) — aucun appel
+LLM supplémentaire, aucun risque de timeline malformée à valider. Séquence
+type : `appear` (0 → ~0.6s) → `wave` (uniquement sur la toute première
+scène du projet, salut de bienvenue) ou directement `point` vers le
+premier élément non textuel de la scène s'il y en a un → `idle` (le
+reste) → `disappear` (dernières ~0.6s). Sur une scène trop courte pour
+qu'un geste soit lisible (`MASCOT_MIN_POINT_WINDOW_SEC`), `wave`/`point`
+sont simplement omis. `add_mascot_timeline(project)` (re)calcule cette
+timeline pour toutes les scènes et met `mascot_enabled = True` ;
+`remove_mascot_timeline(project)` vide toutes les timelines et remet
+`mascot_enabled = False` — jamais d'état intermédiaire incohérent
+(timeline non vide mais mascotte "désactivée") persisté dans le
+`.golpoproj`.
+
+**Génération initiale** (`Pipeline.run`) : si `GenerationRequest.mascot_enabled`,
+`add_mascot_timeline` est appelé après `generate_diagrams` (pas avant) —
+un diagramme retiré faute de génération réussie ne doit pas être choisi
+comme cible de `"point"`.
+
+**Édition NL** : nouvelle action `toggle_mascot` (`app/edit/prompts.py`,
+`app/edit/nl_commands.py::_apply_toggle_mascot`) — no-op si déjà dans
+l'état demandé, sinon marque toutes les scènes comme changées (leur
+`content_hash` change réellement, voir plus bas) pour que
+`Api.apply_edit_command` déclenche `Pipeline.render`.
+`_apply_insert_scene` donne aussi une timeline à toute nouvelle scène
+insérée si `project.mascot_enabled` (jamais en mode "salut", réservé à la
+scène 0 du projet).
+
+**Cache de rendu** : `_hash_scene` (`app/render/partial_render.py`) inclut
+maintenant `scene.mascot_timeline` dans le hash — sans ça, activer/
+désactiver la mascotte ne changerait le hash d'aucune scène et
+`render_all` ignorerait silencieusement le besoin de re-rendu (même piège
+que celui corrigé pour `set_theme`, voir plus haut).
+
+**Rendu JS** (`app/render/web_template/mascot.js`) : position d'ancrage
+FIXE (coin bas-gauche, `MASCOT_ANCHOR_FRACTION`) — seule la pose interne
+bouge (bras, yeux, échelle d'apparition/disparition), ce qui borne une
+fois pour toutes la région à effacer/redessiner à chaque frame (même
+technique que les animations : restaurer depuis
+`window._boardTextureCache`), y compris pour `"point"` où le bras s'étend
+vers une cible potentiellement lointaine (`MASCOT_POINT_REACH` plafonne
+la portée dessinée, donc la région à effacer). Personnage entièrement
+tracé au canvas (cercle, yeux, bras — pas de sprite bitmap importé),
+couleur dédiée par thème (`MASCOT_COLORS`, distincte des couleurs de
+texte pour rester visuellement identifiable). `window.drawMascot` n'est
+appelé que pour les scènes dont `mascot_timeline` est non vide — aucun
+coût supplémentaire sur les scènes/projets sans mascotte.
+
+**Limite v1 assumée** : l'emplacement du coin bas-gauche n'est pas exclu
+de `resolve_overlaps` — un élément visuel placé par le LLM à cet endroit
+précis pourrait occasionnellement se retrouver recouvert par la mascotte
+à chaque frame où elle est active. Considéré rare en pratique (coin
+extrême, éléments plutôt distribués vers le centre par le prompt de
+génération) et cohérent avec la limite déjà assumée pour l'export
+multilingue (repositionnement non recalculé) ; à corriger plus tard en
+réservant explicitement cette zone dans `resolve_overlaps` si ça s'avère
+gênant en usage réel.
+
 ### Diagrammes générés (image → vectorisation)
 
 Texte/icônes/animations ne suffisent pas à représenter un concept
@@ -599,7 +677,7 @@ app/
   tts/            base.py, sapi_local.py, cloud_providers.py, voice_profiles.py
   scenes/         schema.py, project_store.py, project_file.py
   render/         capture.py, ffmpeg_wrapper.py, partial_render.py, diagram_generator.py
-    web_template/ index.html, themes.js, text_to_path.js
+    web_template/ index.html, themes.js, text_to_path.js, animations.js, mascot.js
       surfaces/   blackboard.js, greenboard.js, whiteboard.js
       tools/      chalk.js, marker_veleda.js
     assets/       board_textures/, chalk_textures/

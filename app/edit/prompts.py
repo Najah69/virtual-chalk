@@ -22,6 +22,7 @@ actions, dans l'ordre où elles doivent s'appliquer) :
 - {{"action": "move_scene", "scene_index": <int>, "to_index": <int>}}
 - {{"action": "insert_scene", "before_index": <int>, "voice_over": "...", "visual_elements": [...]}}
 - {{"action": "replace_scene_content", "scene_index": <int>, "voice_over": "...", "visual_elements": [...]}}
+- {{"action": "toggle_mascot", "enabled": <true|false>}}
 
 Pour "insert_scene" et "replace_scene_content", "visual_elements" suit
 EXACTEMENT le même format que la génération de script initiale (3 à 6

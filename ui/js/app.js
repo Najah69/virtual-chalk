@@ -82,8 +82,9 @@ document.getElementById("btn-go-step4").addEventListener("click", async () => {
   const theme = document.querySelector(".theme-card.selected")?.dataset.theme || "chalk_board";
   const videoProfile = document.getElementById("video-profile-select").value;
   const githubContentKind = document.getElementById("github-content-kind").value;
+  const mascotEnabled = document.getElementById("mascot-enabled").checked;
   const result = await window.pywebview.api.start_pipeline(
-    source, voiceProfile, exportH5p, theme, videoProfile, githubContentKind
+    source, voiceProfile, exportH5p, theme, videoProfile, githubContentKind, mascotEnabled
   );
   lastVideoPath = result.video_path;
   document.getElementById("result-video").src = result.video_path;
