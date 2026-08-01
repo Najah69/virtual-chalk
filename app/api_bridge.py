@@ -21,7 +21,7 @@ from app.llm.prompts import DEFAULT_VIDEO_PROFILE, VIDEO_PROFILES
 from app.paths import UI_DIR
 from app.pipeline import GenerationRequest, Pipeline
 from app.scenes.project_file import PROJECT_FILE_EXTENSION, load_project_file, save_project_file
-from app.scenes.schema import CANVAS_HEIGHT, CANVAS_WIDTH, Exercise, Point, Stroke
+from app.scenes.schema import Exercise, Point, Stroke
 from app.settings import Settings, get_api_key
 from app.tts.base import TTSProvider, VoiceProfile
 from app.tts.gemini_tts import GeminiTTSProvider
@@ -161,7 +161,7 @@ class Api:
         return profile
 
     def generate_script(self, source: dict[str, Any], script_profile: str = DEFAULT_VIDEO_PROFILE,
-                         github_content_kind: str | None = None) -> dict[str, Any]:
+                         github_content_kind: str | None = None, mobile_layout: bool = True) -> dict[str, Any]:
         """Étape "2. Script" de l'assistant : ne fait QUE l'appel LLM de
         génération du script (Pipeline.generate_project), sans diagrammes/
         voix/rendu — pour laisser l'utilisateur relire/éditer le texte
@@ -170,13 +170,16 @@ class Api:
         strokes sont générés avec un thème provisoire ("chalk_board") et
         recolorés si besoin dans start_pipeline_from_script, une fois le
         vrai thème connu (même mécanisme que set_theme en édition NL, voir
-        _recolor_strokes_for_theme)."""
+        _recolor_strokes_for_theme). `mobile_layout` (case "mise en page
+        mobile" de l'étape 1), lui, est déjà définitif à cet instant : les
+        strokes sont figés en pixels absolus pour cette orientation dès
+        ce seul appel LLM, contrairement au thème (voir Project.mobile_layout)."""
         text = normalize_source(source)
         pipeline = self._build_pipeline(_DEFAULT_VOICE_PROFILE)
         content_kind = github_content_kind if source.get("type") == "github" else None
         request = GenerationRequest(
             source_text=text, voice_profile=_DEFAULT_VOICE_PROFILE, theme="chalk_board",
-            script_profile=script_profile, github_content_kind=content_kind,
+            script_profile=script_profile, github_content_kind=content_kind, mobile_layout=mobile_layout,
         )
         project = pipeline.generate_project(request)
         self._pending_script_project = project
@@ -411,10 +414,15 @@ class Api:
         if scene is None:
             raise ValueError(f"Scène introuvable : {scene_id!r}")
 
-        x = (x_pct / 100.0) * CANVAS_WIDTH
-        y = (y_pct / 100.0) * CANVAS_HEIGHT
-        width = (width_pct / 100.0) * CANVAS_WIDTH
-        height = (height_pct / 100.0) * CANVAS_HEIGHT
+        # Dimensions du PROJET courant (portrait ou paysage, voir
+        # Project.mobile_layout), pas les constantes globales CANVAS_WIDTH/
+        # HEIGHT (paysage uniquement) — un pourcentage doit s'appliquer au
+        # cadre réellement utilisé par ce projet.
+        canvas_width, canvas_height = self._current_project.canvas_size
+        x = (x_pct / 100.0) * canvas_width
+        y = (y_pct / 100.0) * canvas_height
+        width = (width_pct / 100.0) * canvas_width
+        height = (height_pct / 100.0) * canvas_height
         scene.strokes.append(Stroke(
             points=[Point(x, y)], color="", width=width, height=height,
             kind="image", image_data=image_data,

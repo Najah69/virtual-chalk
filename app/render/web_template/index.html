@@ -39,7 +39,15 @@
     // Le fond du tableau est dessiné ICI, une seule fois : il ne change
     // jamais pendant la scène (seule la craie s'accumule dessus), donc pas
     // besoin de le redessiner à chaque frame comme avant.
-    window.loadScene = function (scene, themeId) {
+    window.loadScene = function (scene, themeId, canvasWidth, canvasHeight) {
+      // Redimensionne le backing store AVANT de dessiner le fond : changer
+      // canvas.width/height efface aussi le contenu existant (comportement
+      // natif du canvas), donc l'ordre importe peu ici, mais le faire en
+      // premier évite de dessiner un fond qui serait immédiatement perdu.
+      if (canvasWidth && canvasHeight) {
+        canvas.width = canvasWidth;
+        canvas.height = canvasHeight;
+      }
       currentScene = scene;
       currentTheme = window.getTheme(themeId);
       currentThemeId = themeId;

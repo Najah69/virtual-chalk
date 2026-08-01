@@ -220,6 +220,101 @@ appelé par `set_theme`) est :
 - `kind in ("shape", "diagram")` → palette cyclique (dessin libre ou
   diagramme déjà vectorisé, la couleur y est purement décorative).
 
+### Mise en page mobile (portrait 1080x1920 vs paysage 1920x1080)
+
+Retour utilisateur : le tableau était toujours en paysage (1920x1080), y
+compris pour une vidéo destinée à être lue sur téléphone/réseaux sociaux.
+Case "Mise en page mobile" à l'étape 1 de l'assistant (`ui/index.html`,
+`#mobile-layout`), **cochée par défaut** — un vrai format vertical
+1080x1920 (`Project.mobile_layout`), pas un simple recadrage optique du
+paysage.
+
+**Pourquoi décidé à l'étape 1, avant l'appel LLM (comme le profil de
+vidéo), contrairement au thème (choisi à l'étape 3)** : les éléments
+visuels du LLM sont exprimés en pourcentage (voir plus haut) mais
+`strokes_from_visual_elements` les convertit IMMÉDIATEMENT en pixels
+absolus, figés dans `Stroke.points` — contrairement à la couleur (simple
+attribut recalculable après coup par `_recolor_strokes_for_theme`),
+changer l'orientation après génération demanderait de relayouter toute la
+scène, pas juste de la retoucher. `GenerationRequest.mobile_layout` (donc
+`Pipeline.generate_project` → `LLMProvider.generate_script` →
+`Project.from_llm_response`) porte ce choix jusqu'à la conversion
+pourcentage → pixel.
+
+**Deux constantes de repli distinctes selon le contexte** (`app/scenes/
+schema.py`) :
+- `Project.from_llm_response` (nouvelle génération) : défaut
+  `mobile_layout=True`, cohérent avec la case cochée par défaut.
+- `Project.from_dict` (chargement d'un `.vchalk` existant) : défaut
+  `mobile_layout=False` si la clé est absente — un projet enregistré
+  avant cette fonctionnalité a ses strokes figés en pixels pour le SEUL
+  format qui existait alors (paysage) ; le réinterpréter en portrait par
+  défaut le ferait déborder du nouveau cadre plus étroit.
+
+**Propagation dans tout le moteur de rendu**, qui ne connaissait jusqu'ici
+que 1920x1080 en dur à plusieurs endroits :
+- `app/render/web_template/index.html::loadScene(scene, themeId,
+  canvasWidth, canvasHeight)` redimensionne `<canvas id="stage">`
+  (attributs `width`/`height`, PAS juste sa taille CSS affichée) avant de
+  dessiner le fond — un canvas HTML alloue toujours un backing store de la
+  taille de ces attributs, indépendamment de la fenêtre/viewport qui
+  l'héberge (la fenêtre de rendu cachée, `main.py`, reste fixe à
+  1920x1080 : `canvas.toDataURL()` lit quand même le backing store entier,
+  pas seulement la portion visible dans la fenêtre).
+- `FrameCapture.render_scene_frames` (`app/render/capture.py`) reçoit
+  `canvas_width`/`canvas_height` en paramètres, lus depuis
+  `Project.canvas_size` par `partial_render.render_scene` (seul endroit
+  où `Project` est encore en scope à ce niveau).
+- `ui/editor/editor_canvas.js` : `CANVAS_WIDTH`/`CANVAS_HEIGHT` sont
+  passés de constantes à variables (`let`), fixées par
+  `setCanvasSize(mobileLayout)` — appelée par `EditorCanvas.loadScene`,
+  elle-même appelée par `editor.js::selectScene` avec
+  `currentProject.mobile_layout`.
+- `Api.insert_image` utilisait par erreur les constantes globales
+  `CANVAS_WIDTH`/`CANVAS_HEIGHT` (toujours paysage) pour la conversion
+  pourcentage → pixel plutôt que `self._current_project.canvas_size` — un
+  projet portrait aurait alors positionné/dimensionné une image insérée
+  pour le mauvais cadre. Corrigé au passage.
+- `app/edit/nl_commands.py` (`_apply_insert_scene`,
+  `_apply_replace_scene_content`) appelaient `strokes_from_visual_elements`
+  sans dimensions explicites (repli silencieux sur le paysage) : une
+  scène insérée/remplacée par édition NL sur un projet portrait aurait
+  été mal mise à l'échelle. Corrigé pour passer `*project.canvas_size`.
+- `app/i18n/translate.py::translate_project` réutilise les strokes
+  (positions déjà figées) de l'original tels quels — doit donc reporter
+  `project.mobile_layout` sur le `Project` traduit plutôt que de retomber
+  sur le défaut `True`, sans quoi un projet paysage traduit se
+  verrait rendu avec un cadre portrait sans rapport avec ses coordonnées
+  réelles.
+- `app/render/ffmpeg_wrapper.py`/le reste du moteur JS (surfaces, mascot,
+  animations) étaient déjà paramétrés en largeur/hauteur (aucune valeur
+  1920/1080 en dur trouvée en dehors des points ci-dessus) — rien à
+  changer là.
+
+**Bug corrigé au passage — titre "décalé"** : le LLM choisit x/y en
+pourcentage sans garantie de bien centrer son texte d'ouverture, et même
+un x=50% correct n'est pas un centrage réel puisque l'ancre d'un texte
+est sa ligne de base à GAUCHE (pas son centre). `strokes_from_visual_elements`
+traite maintenant le PREMIER texte placé dans la bande du haut du tableau
+(`TITLE_TOP_BAND_PCT = 30`, pourcentage de hauteur) comme le titre/
+l'accroche de la scène : son ancre est recalculée pour centrer réellement
+le texte (`canvas_width/2 - largeur_estimée(texte)/2`, réutilise
+`app/render/layout.py::text_width`, déjà utilisé pour les boîtes
+englobantes de collision) et marquée `pinned_x` — un nouveau champ que
+`resolve_overlaps` respecte : un élément épinglé sur un axe n'est plus
+jamais déplacé sur cet axe (seul l'AUTRE élément d'une paire en collision
+bouge, du double du déplacement habituel pour compenser). Seul le premier
+texte de la bande du haut est traité ainsi (pas tous) : un deuxième texte
+qui s'y trouverait aussi (rare) garde sa position normale, pour ne pas
+superposer deux textes tous deux forcés au même centre.
+
+`resolve_overlaps`/`_push_apart` avaient aussi une hypothèse implicite
+"le tableau est plus large que haut" pour départager un chevauchement
+parfaitement symétrique (cas dégénéré, deux éléments à coordonnées
+identiques) — plus vraie en portrait. Corrigé pour comparer réellement
+`canvas_width`/`canvas_height` (déjà passés en paramètres) plutôt que de
+préférer l'axe horizontal inconditionnellement.
+
 ### Disposition (éviter les chevauchements texte/dessin)
 
 Retour utilisateur : le texte peut empiéter sur une icône ou une
@@ -1156,6 +1251,12 @@ appel réseau/LLM/TTS ni de vrai rendu ffmpeg/capture d'écran :
   attente (`_pending_script_project`) et qu'il réapplique les éditions
   textuelles faites à l'étape 2. `Pipeline.finish_generation` y est
   entièrement simulé.
+- `test_mobile_layout.py` — format portrait vs paysage
+  (`Project.mobile_layout`/`canvas_dimensions`) : défauts distincts selon
+  le contexte (`from_llm_response` vs `from_dict`, voir plus haut),
+  centrage/épinglage du texte "titre" par `strokes_from_visual_elements`,
+  et respect de `pinned_x`/préférence d'axe selon l'orientation par
+  `resolve_overlaps` (`app/render/layout.py`).
 
 `tests/conftest.py` fournit `FakeLLMProvider` (sous-classe de
 `LLMProvider` qui rejoue une liste de réponses brutes préparées à

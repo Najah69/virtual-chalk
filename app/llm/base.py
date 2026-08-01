@@ -67,9 +67,10 @@ class LLMProvider(ABC):
 
     def generate_script(self, source_text: str, theme: str = "chalk_board",
                          script_profile: str = DEFAULT_VIDEO_PROFILE,
-                         github_content_kind: str | None = None) -> Project:
+                         github_content_kind: str | None = None,
+                         mobile_layout: bool = True) -> Project:
         data = self.complete_json(
             build_system_prompt(script_profile),
             build_user_prompt(source_text, github_content_kind),
         )
-        return Project.from_llm_response(data, theme=theme)
+        return Project.from_llm_response(data, theme=theme, mobile_layout=mobile_layout)

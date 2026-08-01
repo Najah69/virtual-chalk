@@ -41,8 +41,9 @@ def render_scene(project: Project, scene_id: str, scenes_dir: Path) -> Path:
         raise ValueError(f"Scène introuvable : {scene_id!r}")
     compute_stroke_timings(scene)
 
+    canvas_width, canvas_height = project.canvas_size
     capture = FrameCapture(get_render_window())
-    frames_dir = capture.render_scene_frames(scene, project.theme)
+    frames_dir = capture.render_scene_frames(scene, project.theme, canvas_width, canvas_height)
 
     chalk_audio_path = (
         build_chalk_track(scene) if tool_for_theme(project.theme) == "chalk" else None

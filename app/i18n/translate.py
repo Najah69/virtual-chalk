@@ -142,4 +142,11 @@ def translate_project(project: Project, target_lang: str, llm: LLMProvider) -> P
         scenes=new_scenes,
         theme=project.theme,
         exercises=new_exercises,
+        # new_scenes réutilise scene.strokes tel quel (positions déjà
+        # figées en pixels absolus, seule la voix off/texte change) : ce
+        # champ DOIT suivre l'original, pas retomber sur le défaut True
+        # (Project.mobile_layout) — sinon un projet paysage traduit se
+        # verrait rendu avec un cadre portrait, sans rapport avec les
+        # coordonnées réelles de ses strokes.
+        mobile_layout=project.mobile_layout,
     )

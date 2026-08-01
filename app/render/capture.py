@@ -42,12 +42,20 @@ class FrameCapture:
     def __init__(self, window: webview.Window):
         self.window = window
 
-    def render_scene_frames(self, scene: Scene, theme: str) -> Path:
+    def render_scene_frames(self, scene: Scene, theme: str,
+                             canvas_width: float, canvas_height: float) -> Path:
         out_dir = Path(tempfile.mkdtemp(prefix=f"vc_{scene.scene_id}_"))
         frame_count = max(1, int(scene.duration_sec * FPS))
 
+        # canvas_width/height (voir Project.canvas_size) redimensionnent le
+        # <canvas> AVANT le dessin du fond (window.loadScene) : un canvas
+        # HTML n'a pas de taille "par défaut" liée à la fenêtre qui le
+        # contient, son backing store (et donc toDataURL()) suit toujours
+        # ses attributs width/height, indépendamment de la taille de la
+        # fenêtre pywebview (cachée) qui l'héberge.
         self.window.evaluate_js(
-            f"window.loadScene({json.dumps(asdict(scene))}, {json.dumps(theme)})"
+            f"window.loadScene({json.dumps(asdict(scene))}, {json.dumps(theme)}, "
+            f"{canvas_width}, {canvas_height})"
         )
         self._wait_for_images_ready()
 

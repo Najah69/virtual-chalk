@@ -148,7 +148,7 @@ def _apply_insert_scene(project: Project, action: dict, result: EditResult) -> N
         voice_over=str(action.get("voice_over", "")).strip(),
         duration_sec=10.0,
         visual_instruction="",
-        strokes=strokes_from_visual_elements(action.get("visual_elements", []), project.theme),
+        strokes=strokes_from_visual_elements(action.get("visual_elements", []), project.theme, *project.canvas_size),
     )
     if project.mascot_enabled:
         # La scène vient d'être créée, pas encore insérée dans
@@ -166,7 +166,7 @@ def _apply_replace_scene_content(project: Project, action: dict, result: EditRes
         scene.voice_over = str(action["voice_over"]).strip()
         result.voice_changed_scene_ids.append(scene.scene_id)
     if "visual_elements" in action:
-        scene.strokes = strokes_from_visual_elements(action["visual_elements"], project.theme)
+        scene.strokes = strokes_from_visual_elements(action["visual_elements"], project.theme, *project.canvas_size)
     result.changed_scene_ids.append(scene.scene_id)
 
 

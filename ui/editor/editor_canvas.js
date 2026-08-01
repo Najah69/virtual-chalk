@@ -24,9 +24,18 @@
 (function () {
   "use strict";
 
-  const CANVAS_WIDTH = 1920;
-  const CANVAS_HEIGHT = 1080;
-  const HANDLE_SIZE = 14; // px en espace canvas réel (1920x1080), pas espace écran
+  // Doit rester synchronisé avec CANVAS_WIDTH/HEIGHT et
+  // CANVAS_WIDTH/HEIGHT_PORTRAIT dans app/scenes/schema.py. "let" (pas
+  // "const") : dépend du projet chargé (Project.mobile_layout, voir
+  // setCanvasSize ci-dessous) — un même éditeur peut successivement
+  // ouvrir un projet paysage puis un projet portrait.
+  const CANVAS_SIZES = {
+    landscape: [1920, 1080],
+    portrait: [1080, 1920],
+  };
+  let CANVAS_WIDTH = CANVAS_SIZES.portrait[0];
+  let CANVAS_HEIGHT = CANVAS_SIZES.portrait[1];
+  const HANDLE_SIZE = 14; // px en espace canvas réel, pas espace écran
 
   // Doit rester synchronisé avec THEME_TEXT_COLORS dans
   // app/render/theme_registry.py (même logique que window.THEMES dans
@@ -66,6 +75,21 @@
     const scale = Math.min(availW / CANVAS_WIDTH, availH / CANVAS_HEIGHT);
     canvas.style.width = `${Math.floor(CANVAS_WIDTH * scale)}px`;
     canvas.style.height = `${Math.floor(CANVAS_HEIGHT * scale)}px`;
+  }
+
+  // Applique l'orientation du projet chargé (voir Project.mobile_layout,
+  // relayé par editor.js) — change le backing store réel du canvas
+  // (attributs width/height, PAS juste sa taille CSS affichée), donc doit
+  // être appelé avant tout redraw() pour ce projet. Change canvas.width/
+  // height efface aussi le contenu existant (comportement natif du
+  // canvas), sans effet ici puisque loadScene() redessine juste après.
+  function setCanvasSize(mobileLayout) {
+    const [w, h] = mobileLayout ? CANVAS_SIZES.portrait : CANVAS_SIZES.landscape;
+    CANVAS_WIDTH = w;
+    CANVAS_HEIGHT = h;
+    canvas.width = CANVAS_WIDTH;
+    canvas.height = CANVAS_HEIGHT;
+    resizeCanvasToContainer();
   }
   window.addEventListener("resize", resizeCanvasToContainer);
   resizeCanvasToContainer();
@@ -528,8 +552,8 @@
   // --- API publique ---------------------------------------------------------
 
   window.EditorCanvas = {
-    loadScene(scene, themeId) {
-      resizeCanvasToContainer();
+    loadScene(scene, themeId, mobileLayout) {
+      setCanvasSize(mobileLayout);
       editorScene = scene;
       editorThemeId = themeId;
       editorTheme = window.getTheme(themeId);

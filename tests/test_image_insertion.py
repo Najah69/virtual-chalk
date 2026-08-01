@@ -81,7 +81,11 @@ def _make_api(monkeypatch, project, project_dir):
 
 
 def test_insert_image_appends_stroke_with_correct_pixel_conversion(monkeypatch, tmp_path):
-    project = Project(title="t", summary="s", sections=[], scenes=[_make_scene("s0")])
+    # mobile_layout=False (paysage) : cette conversion pourcentage -> pixel
+    # est le point testé ici, pas l'orientation elle-même — voir
+    # test_insert_image_uses_project_canvas_size_not_global_constant pour
+    # la vérification équivalente en portrait (défaut de Project).
+    project = Project(title="t", summary="s", sections=[], scenes=[_make_scene("s0")], mobile_layout=False)
     api, fake_pipeline = _make_api(monkeypatch, project, tmp_path)
 
     result = api.insert_image("s0", TINY_PNG_DATA_URI, x_pct=25.0, y_pct=50.0, width_pct=20.0, height_pct=10.0)
@@ -95,6 +99,26 @@ def test_insert_image_appends_stroke_with_correct_pixel_conversion(monkeypatch, 
     assert stroke.height == 0.10 * CANVAS_HEIGHT
     assert fake_pipeline.rerendered_scene_id == "s0"
     assert result["project"]["scenes"][0]["strokes"][-1]["kind"] == "image"
+
+
+def test_insert_image_uses_project_canvas_size_not_global_constant(monkeypatch, tmp_path):
+    """Régression Tâche #6 : insert_image utilisait les constantes globales
+    CANVAS_WIDTH/HEIGHT (toujours paysage) au lieu des dimensions réelles
+    du projet courant — un projet portrait (mobile_layout=True, le
+    défaut) aurait alors placé/dimensionné une image insérée pour le
+    mauvais cadre."""
+    project = Project(title="t", summary="s", sections=[], scenes=[_make_scene("s0")], mobile_layout=True)
+    api, _ = _make_api(monkeypatch, project, tmp_path)
+    canvas_width, canvas_height = project.canvas_size
+    assert (canvas_width, canvas_height) != (CANVAS_WIDTH, CANVAS_HEIGHT)
+
+    api.insert_image("s0", TINY_PNG_DATA_URI, x_pct=25.0, y_pct=50.0, width_pct=20.0, height_pct=10.0)
+
+    stroke = project.scenes[0].strokes[-1]
+    assert stroke.points[0].x == 0.25 * canvas_width
+    assert stroke.points[0].y == 0.50 * canvas_height
+    assert stroke.width == 0.20 * canvas_width
+    assert stroke.height == 0.10 * canvas_height
 
 
 def test_insert_image_raises_for_unknown_scene(monkeypatch, tmp_path):

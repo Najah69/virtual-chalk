@@ -4,13 +4,40 @@ import re
 from dataclasses import asdict, dataclass, field
 from typing import Any, Literal
 
-from app.render.layout import resolve_overlaps
+from app.render.layout import resolve_overlaps, text_width
 from app.render.theme_registry import palette_for_theme, semantic_color_for_icon, text_color_for_theme
 
+# "Paysage" (format historique, plein écran) — reste le défaut de ces deux
+# constantes pour ne pas casser les appelants existants (tests, insertion
+# d'image...) qui les importent directement sans connaître l'orientation
+# d'un projet particulier ; voir canvas_size() pour le choix effectif fait
+# à la génération, qui dépend de Project.mobile_layout.
 CANVAS_WIDTH = 1920
 CANVAS_HEIGHT = 1080
+# "Portrait" (case "mise en page mobile" cochée, voir Project.mobile_layout) :
+# vraie vidéo verticale 1080x1920 (pas un simple recadrage optique du
+# paysage), format natif pour la lecture téléphone/réseaux sociaux.
+CANVAS_WIDTH_PORTRAIT = 1080
+CANVAS_HEIGHT_PORTRAIT = 1920
 TEXT_STROKE_WIDTH = 90.0
 ICON_SIZE = 220.0
+
+# Bande du haut du tableau (pourcentage de la hauteur) dans laquelle un
+# élément "text" est considéré comme le titre/l'accroche de la scène —
+# voir strokes_from_visual_elements : le PREMIER texte que le LLM place
+# dans cette bande est automatiquement recentré horizontalement et épinglé
+# (resolve_overlaps ne le déplace plus jamais latéralement), pour corriger
+# un retour utilisateur récurrent (titre "décalé" au lieu d'être bien au
+# milieu en haut) sans dépendre de la précision du LLM sur x/y.
+TITLE_TOP_BAND_PCT = 30.0
+
+
+def canvas_dimensions(mobile_layout: bool) -> tuple[float, float]:
+    """Dimensions du tableau pour une orientation donnée — voir
+    Project.canvas_size, qui expose ceci pour un projet déjà chargé."""
+    if mobile_layout:
+        return CANVAS_WIDTH_PORTRAIT, CANVAS_HEIGHT_PORTRAIT
+    return CANVAS_WIDTH, CANVAS_HEIGHT
 
 # Doit rester synchronisé avec les icônes réellement converties dans
 # app/render/web_template/icon_paths.js (voir docs/architecture.md pour
@@ -138,27 +165,42 @@ class Exercise:
     payload: dict[str, Any]
 
 
-def strokes_from_visual_elements(elements: list[dict[str, Any]], theme: str) -> list[Stroke]:
+def strokes_from_visual_elements(elements: list[dict[str, Any]], theme: str,
+                                  canvas_width: float = CANVAS_WIDTH,
+                                  canvas_height: float = CANVAS_HEIGHT) -> list[Stroke]:
     """Convertit les éléments visuels générés par le LLM (mots/courtes
     phrases ou icônes, positionnés en pourcentage du tableau) en Stroke.
     Le tracé réel (contour de lettres/icône) est calculé côté JS au rendu
     (text_to_path.js / icon_to_path.js) — ici on ne fixe que le point
     d'ancrage. Les icônes hors vocabulaire connu (ICON_NAMES) sont
     ignorées plutôt que de planter le rendu sur une sortie LLM imprévue.
+    `canvas_width`/`canvas_height` déterminent l'échelle des pourcentages
+    reçus — voir Project.canvas_size (dépend de Project.mobile_layout).
 
     Le LLM choisit x/y en pourcentage sans connaître les dimensions
     réelles de ce qu'il place (largeur du texte selon son contenu,
     empreinte d'une icône/animation) : rien ne garantit qu'un texte ne
     recouvre pas un dessin, ce qu'un professeur ne fait jamais au tableau.
     `resolve_overlaps` écarte donc les éléments dont la boîte englobante
-    se chevauche avant de figer leur position finale dans les Stroke."""
+    se chevauche avant de figer leur position finale dans les Stroke.
+
+    Le PREMIER texte placé par le LLM dans la bande du haut
+    (TITLE_TOP_BAND_PCT) est traité comme le titre/l'accroche de la
+    scène : recentré horizontalement (son ancre, en ligne de base à
+    gauche, est décalée de sa largeur estimée / 2) et épinglé
+    (`pinned_x`) pour que resolve_overlaps ne le recale jamais
+    latéralement — corrige un retour utilisateur ("titre décalé") plutôt
+    que d'espérer que le LLM choisisse x=50 de façon fiable."""
     palette = palette_for_theme(theme)
     planned: list[dict[str, Any]] = []
     text_index = 0
+    title_assigned = False
     for i, el in enumerate(elements):
         el_type = el.get("type")
-        x = (float(el.get("x", 50)) / 100.0) * CANVAS_WIDTH
-        y = (float(el.get("y", 50)) / 100.0) * CANVAS_HEIGHT
+        x_pct = float(el.get("x", 50))
+        y_pct = float(el.get("y", 50))
+        x = (x_pct / 100.0) * canvas_width
+        y = (y_pct / 100.0) * canvas_height
         color = palette[i % len(palette)]
 
         if el_type == "text":
@@ -167,7 +209,12 @@ def strokes_from_visual_elements(elements: list[dict[str, Any]], theme: str) -> 
                 continue
             text_color = text_color_for_theme(theme, text_index)
             text_index += 1
-            planned.append({"kind": "text", "x": x, "y": y, "size": TEXT_STROKE_WIDTH, "content": content, "name": "", "color": text_color})
+            entry = {"kind": "text", "x": x, "y": y, "size": TEXT_STROKE_WIDTH, "content": content, "name": "", "color": text_color}
+            if not title_assigned and y_pct <= TITLE_TOP_BAND_PCT:
+                entry["x"] = canvas_width / 2.0 - text_width(content, TEXT_STROKE_WIDTH) / 2.0
+                entry["pinned_x"] = True
+                title_assigned = True
+            planned.append(entry)
         elif el_type == "icon":
             name = str(el.get("name", "")).strip()
             if name not in ICON_NAMES:
@@ -184,12 +231,12 @@ def strokes_from_visual_elements(elements: list[dict[str, Any]], theme: str) -> 
             description = str(el.get("description", "")).strip()
             if not description:
                 continue
-            width_px = (float(el.get("width", DIAGRAM_DEFAULT_WIDTH_PCT)) / 100.0) * CANVAS_WIDTH
-            height_px = (float(el.get("height", DIAGRAM_DEFAULT_HEIGHT_PCT)) / 100.0) * CANVAS_HEIGHT
+            width_px = (float(el.get("width", DIAGRAM_DEFAULT_WIDTH_PCT)) / 100.0) * canvas_width
+            height_px = (float(el.get("height", DIAGRAM_DEFAULT_HEIGHT_PCT)) / 100.0) * canvas_height
             planned.append({"kind": "diagram", "x": x, "y": y, "size": width_px, "height": height_px,
                              "content": description, "name": "", "color": color})
 
-    resolve_overlaps(planned, CANVAS_WIDTH, CANVAS_HEIGHT)
+    resolve_overlaps(planned, canvas_width, canvas_height)
 
     return [
         Stroke(points=[Point(el["x"], el["y"])], color=el["color"], width=el["size"],
@@ -279,11 +326,25 @@ class Project:
     theme: str = "chalk_board"
     exercises: list[Exercise] = field(default_factory=list)
     mascot_enabled: bool = False
+    # Format vertical 1080x1920 (case "mise en page mobile" cochée par
+    # défaut à l'étape 1 de l'assistant) plutôt que le paysage 1920x1080
+    # historique — voir canvas_size(). Décidé une fois pour toutes à la
+    # génération (from_llm_response) : les strokes sont figés en pixels
+    # absolus dès cet instant (voir strokes_from_visual_elements), donc
+    # changer l'orientation après coup nécessiterait de relayouter toute
+    # la scène, pas juste de recolorer comme pour un changement de thème
+    # (_recolor_strokes_for_theme) — contrainte assumée, cohérente avec le
+    # profil de vidéo (aussi figé à l'étape 1, voir ui/index.html).
+    mobile_layout: bool = True
 
     @property
     def slug(self) -> str:
         base = re.sub(r"[^a-z0-9]+", "-", self.title.lower()).strip("-")
         return base or "virtual-chalk-project"
+
+    @property
+    def canvas_size(self) -> tuple[float, float]:
+        return canvas_dimensions(self.mobile_layout)
 
     def find_scene(self, scene_id: str) -> Scene | None:
         """Retrouve une scène par id, ou None si absente — jamais de
@@ -305,7 +366,9 @@ class Project:
         return starts
 
     @classmethod
-    def from_llm_response(cls, data: dict[str, Any], theme: str = "chalk_board") -> "Project":
+    def from_llm_response(cls, data: dict[str, Any], theme: str = "chalk_board",
+                           mobile_layout: bool = True) -> "Project":
+        canvas_width, canvas_height = canvas_dimensions(mobile_layout)
         sections = [Section(**s) for s in data.get("sections", [])]
         scenes = [
             Scene(
@@ -314,12 +377,13 @@ class Project:
                 duration_sec=float(s.get("duration_sec", 10)),
                 visual_instruction=s.get("visual_instruction", ""),
                 notes=s.get("notes", ""),
-                strokes=strokes_from_visual_elements(s.get("visual_elements", []), theme),
+                strokes=strokes_from_visual_elements(s.get("visual_elements", []), theme, canvas_width, canvas_height),
             )
             for s in data.get("script", [])
         ]
         title = (data.get("summary", "")[:60] or "Projet Virtual-Chalk").strip()
-        return cls(title=title, summary=data.get("summary", ""), sections=sections, scenes=scenes, theme=theme)
+        return cls(title=title, summary=data.get("summary", ""), sections=sections, scenes=scenes, theme=theme,
+                    mobile_layout=mobile_layout)
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)
@@ -343,4 +407,12 @@ class Project:
             title=data["title"], summary=data["summary"], sections=sections,
             scenes=scenes, theme=data.get("theme", "chalk_board"), exercises=exercises,
             mascot_enabled=data.get("mascot_enabled", False),
+            # Un .vchalk enregistré avant cette fonctionnalité n'a pas ce
+            # champ — ses strokes ont été figés en pixels absolus pour le
+            # SEUL format qui existait alors (paysage 1920x1080, voir
+            # CANVAS_WIDTH/HEIGHT), donc le repli doit être False, pas le
+            # défaut True utilisé pour une NOUVELLE génération
+            # (from_llm_response) : réinterpréter ces strokes en portrait
+            # sans les relayouter les ferait déborder du nouveau cadre.
+            mobile_layout=data.get("mobile_layout", False),
         )

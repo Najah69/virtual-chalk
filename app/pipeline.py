@@ -49,6 +49,11 @@ class GenerationRequest:
     github_content_kind: str | None = None
     export_h5p: bool = False
     mascot_enabled: bool = False
+    # Format vertical 1080x1920 pour lecture téléphone (voir
+    # Project.mobile_layout) — décidé à l'étape 1 de l'assistant, avant
+    # l'appel LLM (generate_project), car les strokes sont figés en
+    # pixels absolus dès cet instant.
+    mobile_layout: bool = True
 
 
 class Pipeline:
@@ -73,7 +78,7 @@ class Pipeline:
             on_progress("script", 0.0)
         project = self.llm.generate_script(
             request.source_text, theme=request.theme, script_profile=request.script_profile,
-            github_content_kind=request.github_content_kind,
+            github_content_kind=request.github_content_kind, mobile_layout=request.mobile_layout,
         )
         if on_progress:
             on_progress("script", 1.0)

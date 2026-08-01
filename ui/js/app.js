@@ -142,7 +142,8 @@ document.getElementById("btn-go-step2").addEventListener("click", async () => {
     const source = resolveSource();
     const videoProfile = document.getElementById("video-profile-select").value;
     const githubContentKind = document.getElementById("github-content-kind").value;
-    const project = await window.pywebview.api.generate_script(source, videoProfile, githubContentKind);
+    const mobileLayout = document.getElementById("mobile-layout").checked;
+    const project = await window.pywebview.api.generate_script(source, videoProfile, githubContentKind, mobileLayout);
     renderScriptEditor(project);
     goToStep(2);
   } finally {

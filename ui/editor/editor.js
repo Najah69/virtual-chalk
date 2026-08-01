@@ -98,7 +98,7 @@ function selectScene(sceneId) {
   document.getElementById("prop-duration-display").textContent = scene.duration_sec.toFixed(1);
   document.getElementById("voice-over-status").textContent = "";
   renderSceneList();
-  window.EditorCanvas.loadScene(scene, currentProject.theme);
+  window.EditorCanvas.loadScene(scene, currentProject.theme, currentProject.mobile_layout);
   showElementProperties(null);
 }
 
