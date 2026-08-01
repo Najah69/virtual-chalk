@@ -655,6 +655,13 @@
         start_sec: s.start_sec || 0.0,
         end_sec: s.end_sec || 0.0,
         image_data: s.image_data || "",
+        // Paramètres d'un verbe de la grammaire de mouvement (ex: "orbit",
+        // voir animations.js) — l'éditeur n'a pas encore d'interface pour
+        // les MODIFIER (pas de panneau de propriétés pour les éléments
+        // animés), mais doit au moins les préserver telles quelles à
+        // chaque sauvegarde, plutôt que les perdre silencieusement dès
+        // qu'un autre élément de la même scène est édité.
+        params: s.params || {},
       }));
     },
   };

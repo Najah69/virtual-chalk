@@ -83,7 +83,20 @@ DIAGRAM_DEFAULT_HEIGHT_PCT = 32.0
 
 # Doit rester synchronisé avec window.ANIMATIONS dans
 # app/render/web_template/animations.js.
-ANIMATION_NAMES = {"falling_rain"}
+ANIMATION_NAMES = {"falling_rain", "orbit"}
+
+# "orbit" — premier verbe de la grammaire de mouvement (voir
+# docs/architecture.md) : N corps qui tournent autour d'un centre,
+# paramétrés par le LLM plutôt qu'une animation par sujet (système
+# solaire, électron/noyau, satellite...). Bornes de sécurité contre une
+# sortie LLM non plausible (trop de corps, corps minuscule illisible) :
+# resolue une seule fois ici, pas laissée à la vérification du rendu.
+ORBIT_MAX_BODIES = 4
+ORBIT_MIN_BODY_SIZE_PX = 24.0
+ORBIT_DEFAULT_RADIUS_PCT = 15.0
+ORBIT_DEFAULT_SIZE_PCT = 3.0
+ORBIT_DEFAULT_PERIOD_SEC = 6.0
+ORBIT_DEFAULT_CENTER_SIZE_PCT = 8.0
 
 
 @dataclass
@@ -122,6 +135,14 @@ class Stroke:
     # d'ancrage haut-gauche (même convention que icon/diagram),
     # width/height la taille d'affichage en pixels canvas.
     image_data: str = ""
+    # Paramètres structurés propres à un verbe de la grammaire de
+    # mouvement (kind="animation", voir ORBIT_* ci-dessus et
+    # window.ANIMATIONS.orbit côté JS) — déjà résolus en pixels canvas
+    # (jamais des pourcentages bruts du LLM, voir strokes_from_visual_elements)
+    # pour que le JS n'ait aucune conversion d'unité à faire. Vide pour
+    # tout ce qui n'est pas un verbe paramétré (ex: "falling_rain", qui
+    # n'a besoin que de points[0]/width comme avant).
+    params: dict[str, Any] = field(default_factory=dict)
 
 
 @dataclass
@@ -178,6 +199,56 @@ class Exercise:
     time_sec: float
     title: str
     payload: dict[str, Any]
+
+
+def _orbit_params_from_element(el: dict[str, Any], canvas_width: float,
+                                canvas_height: float) -> dict[str, Any] | None:
+    """Résout `el["bodies"]` (liste de corps en pourcentage, voir
+    ORBIT_* ci-dessus) en pixels canvas, prête à être jouée telle quelle
+    par window.ANIMATIONS.orbit côté JS (aucune conversion d'unité
+    restante à faire là-bas). Icônes hors vocabulaire connu ignorées
+    (même logique que le reste de cette fonction) ; None si aucun corps
+    valide n'est resté après filtrage.
+
+    `center_icon` (optionnel) est dessiné PAR l'animation orbit elle-même
+    plutôt que de demander au LLM de placer une icône statique séparée au
+    même point : `resolve_overlaps` ne sait pas que les deux devraient
+    rester co-localisés, et écarterait l'icône du vrai centre de rotation
+    dès qu'elle chevauche l'emprise de l'orbite (bug constaté à l'écran
+    lors de la vérification visuelle — le "soleil" se retrouvait décalé
+    des anneaux qu'il est censé occuper)."""
+    min_dim = min(canvas_width, canvas_height)
+    bodies = []
+    for raw_body in el.get("bodies", [])[:ORBIT_MAX_BODIES]:
+        icon_name = str(raw_body.get("icon", "")).strip()
+        if icon_name not in ICON_NAMES:
+            continue
+        radius_pct = float(raw_body.get("radius_pct", ORBIT_DEFAULT_RADIUS_PCT))
+        size_pct = float(raw_body.get("size_pct", ORBIT_DEFAULT_SIZE_PCT))
+        bodies.append({
+            "icon": icon_name,
+            "radius": (radius_pct / 100.0) * min_dim,
+            "size": max((size_pct / 100.0) * min_dim, ORBIT_MIN_BODY_SIZE_PX),
+            "period_s": max(float(raw_body.get("period_s", ORBIT_DEFAULT_PERIOD_SEC)), 1.0),
+            "phase_deg": float(raw_body.get("phase_deg", 0.0)),
+        })
+    if not bodies:
+        return None
+
+    center_icon = str(el.get("center_icon", "")).strip()
+    center_size = 0.0
+    if center_icon in ICON_NAMES:
+        center_size_pct = float(el.get("center_size_pct", ORBIT_DEFAULT_CENTER_SIZE_PCT))
+        center_size = max((center_size_pct / 100.0) * min_dim, ORBIT_MIN_BODY_SIZE_PX)
+    else:
+        center_icon = ""  # icone inconnue/absente : pas de corps central dessine
+
+    return {
+        "bodies": bodies,
+        "draw_orbit_rings": bool(el.get("draw_orbit_rings", True)),
+        "center_icon": center_icon,
+        "center_size": center_size,
+    }
 
 
 def strokes_from_visual_elements(elements: list[dict[str, Any]], theme: str,
@@ -241,7 +312,27 @@ def strokes_from_visual_elements(elements: list[dict[str, Any]], theme: str,
             if name not in ANIMATION_NAMES:
                 continue
             anim_color = semantic_color_for_icon(name, theme) or color
-            planned.append({"kind": "animation", "x": x, "y": y, "size": ANIMATION_SIZE, "content": "", "name": name, "color": anim_color})
+            entry = {"kind": "animation", "x": x, "y": y, "size": ANIMATION_SIZE, "content": "", "name": name, "color": anim_color}
+            if name == "orbit":
+                orbit_params = _orbit_params_from_element(el, canvas_width, canvas_height)
+                if orbit_params is None:
+                    continue  # aucun corps valide : un "orbit" vide n'a pas de sens
+                entry["params"] = orbit_params
+                # Empreinte du plus grand corps (ou du centre lui-même,
+                # s'il est plus large que le rayon de la première orbite)
+                # pour le bbox de resolve_overlaps (voir
+                # app/render/layout.py::_bbox) ; anchor="center" lui
+                # indique que l'ancre est le CENTRE de rotation (extension
+                # symétrique, un cercle) et non le coin haut-gauche par
+                # défaut des autres animations — sans ça, un centre placé
+                # dans la moitié basse du tableau serait poussé vers le
+                # haut au recadrage sans collision réelle.
+                entry["size"] = max(
+                    max(b["radius"] + b["size"] / 2 for b in orbit_params["bodies"]),
+                    orbit_params["center_size"] / 2,
+                )
+                entry["anchor"] = "center"
+            planned.append(entry)
         elif el_type == "diagram":
             description = str(el.get("description", "")).strip()
             if not description:
@@ -257,7 +348,8 @@ def strokes_from_visual_elements(elements: list[dict[str, Any]], theme: str,
     return [
         Stroke(points=[Point(el["x"], el["y"])], color=el["color"], width=el["size"],
                height=el.get("height", 0.0), kind=el["kind"],
-               text=el["content"] if el["kind"] in ("text", "diagram") else el["name"])
+               text=el["content"] if el["kind"] in ("text", "diagram") else el["name"],
+               params=el.get("params", {}))
         for el in planned
     ]
 
@@ -413,7 +505,8 @@ class Project:
                 Stroke(points=[Point(**p) for p in st["points"]], color=st["color"],
                        width=st["width"], kind=st.get("kind", "shape"), text=st.get("text", ""),
                        height=st.get("height", 0.0), start_sec=st.get("start_sec", 0.0),
-                       end_sec=st.get("end_sec", 0.0), image_data=st.get("image_data", ""))
+                       end_sec=st.get("end_sec", 0.0), image_data=st.get("image_data", ""),
+                       params=st.get("params", {}))
                 for st in s.get("strokes", [])
             ]
             mascot_timeline = [MascotAction(**m) for m in s.get("mascot_timeline", [])]

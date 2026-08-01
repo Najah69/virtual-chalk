@@ -404,7 +404,7 @@ class Api:
                 color=s["color"], width=s["width"], kind=s.get("kind", "shape"),
                 text=s.get("text", ""), height=s.get("height", 0.0),
                 start_sec=s.get("start_sec", 0.0), end_sec=s.get("end_sec", 0.0),
-                image_data=s.get("image_data", ""),
+                image_data=s.get("image_data", ""), params=s.get("params", {}),
             )
             for s in strokes
         ]

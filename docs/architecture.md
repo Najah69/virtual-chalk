@@ -444,6 +444,73 @@ gouttes différentes d'une frame à l'autre, gel correct après `end_sec`,
 et absence d'interférence avec un texte positionné ailleurs et apparu
 après le gel.
 
+### Grammaire de mouvement — "orbit"
+
+Retour utilisateur : sur un sujet qui implique explicitement du mouvement
+(le système solaire), le moteur ne dessinait RIEN de pertinent — le LLM
+ne choisissait que du texte/des icônes statiques, faute de vocabulaire
+adapté. `falling_rain` était la seule animation existante, câblée à la
+main pour un seul sujet ; ajouter une animation par sujet ne passe pas à
+l'échelle. Premier "verbe" d'une grammaire de mouvement plus générale
+(voir les notes de brainstorm) : `orbit`, N corps qui tournent autour
+d'un centre, paramétré par le LLM plutôt qu'une animation par sujet —
+couvre système solaire, électron/noyau, satellite, lune... avec une
+seule fonction JS écrite une fois.
+
+**Schéma** : `Stroke` gagne un champ `params: dict` (vide sauf pour un
+verbe paramétré — `falling_rain` n'en a toujours pas besoin, juste
+`points[0]`/`width` comme avant). Pour `orbit`, `params` contient
+`bodies` (liste de `{icon, radius, size, period_s, phase_deg}`, déjà
+résolus en pixels canvas côté Python — voir `_orbit_params_from_element`,
+`app/scenes/schema.py`), `draw_orbit_rings`, `center_icon`, `center_size`.
+`ORBIT_MAX_BODIES`/`ORBIT_MIN_BODY_SIZE_PX` bornent une sortie LLM non
+plausible (trop de corps, corps illisible) — résolu une seule fois ici,
+pas laissé au rendu. `points[0]` reste le centre de rotation, même
+convention que les autres animations.
+
+**Le piège trouvé en testant réellement, pas en relisant le code** :
+la première version demandait au LLM de placer une icône statique
+séparée au même x/y que le centre pour représenter le corps central
+(ex: "sun"). `resolve_overlaps` ne sait pas que les deux éléments
+devraient rester co-localisés — il voit deux boîtes qui se chevauchent
+et les écarte, comme il le ferait pour n'importe quelle collision
+fortuite. Résultat observé à l'écran (capture canvas, pas une
+supposition) : le soleil se retrouvait décalé des anneaux d'orbite qu'il
+est censé occuper. Corrigé en faisant dessiner le corps central PAR
+`orbit` elle-même (`params.center_icon`/`center_size`, optionnels) —
+un seul `Stroke` produit, plus de second élément que le placement
+automatique pourrait désynchroniser. Le prompt (`app/llm/prompts.py`)
+interdit maintenant explicitement d'ajouter une icône séparée pour le
+centre.
+
+**Bbox pour `resolve_overlaps`** (`app/render/layout.py::_bbox`) : les
+animations existantes (`falling_rain`) sont ancrées coin haut-gauche
+avec une extension asymétrique vers le bas (nuage + gouttes qui
+tombent) — une orbite est ancrée à son CENTRE avec une extension
+symétrique (un cercle). Les confondre pousserait à tort un centre
+d'orbite placé dans la moitié basse du tableau vers le haut au
+recadrage, sans collision réelle (bug rencontré et corrigé pendant le
+développement, avant même la vérification visuelle ci-dessus). Un champ
+`anchor: "center"` sur l'entrée `planned` (voir `strokes_from_visual_elements`)
+sélectionne la bonne formule de boîte englobante.
+
+**Rendu** (`window.ANIMATIONS.orbit`, `animations.js`) : même principe
+que `falling_rain` (effacement local depuis `_boardTextureCache`, corps
+mis en cache en sprites via `renderIconSprite` — un par corps + un pour
+le centre — calculés une seule fois puis repositionnés chaque frame par
+simple trigonométrie). Les anneaux-guides sont bon marché (quelques
+`ctx.arc()`), redessinés chaque frame sans mise en cache.
+
+Vérifié à trois niveaux, comme le reste du moteur cette session : (1)
+séquence de plusieurs frames dans le rendu direct (positions différentes,
+soleil resté centré, aucune traînée) ; (2) un vrai appel LLM sur un texte
+sur le système solaire — a spontanément utilisé `orbit` dans 2 scènes
+sur 7, avec des paramètres cohérents (rayon croissant, période croissante,
+comme demandé dans le prompt) sans aucune autre incitation ; (3) pipeline
+complet réel (vraie synthèse vocale, vrai rendu, vrai encodage H.264) —
+frame extraite du MP4 final, titre bien centré en haut, soleil et
+planètes correctement positionnés sur leurs anneaux.
+
 ### Mascotte animée
 
 Personnage optionnel (case "Ajouter une mascotte animée" à l'étape 3 de
@@ -1378,6 +1445,19 @@ appel réseau/LLM/TTS ni de vrai rendu ffmpeg/capture d'écran :
   (texture, biseau, bâtons de craie) est vérifié séparément via un script
   de fumée qui capture un vrai canvas puis une frame extraite d'une vidéo
   encodée réelle, pas reproductible en pytest pur.
+- `test_orbit_animation.py` — premier verbe de la grammaire de mouvement :
+  résolution pourcentage → pixels des corps et du centre, bornes de
+  sécurité (nombre de corps, taille minimale), icônes inconnues filtrées
+  sans faire échouer tout le stroke, `orbit` sans corps valide entièrement
+  ignoré, boîte englobante correcte (ancre centrée, pas coin haut-gauche),
+  et surtout la régression du corps central qui se désynchronisait des
+  anneaux (voir plus haut) — `orbit` ne produit désormais qu'un seul
+  `Stroke`, plus de second élément que `resolve_overlaps` pourrait
+  écarter. Persistance de `Stroke.params` à travers `Project.to_dict`/
+  `from_dict`, un `.vchalk` pré-existant sans ce champ, et le round-trip
+  éditeur (`Api.update_scene_strokes`). Le mouvement réel frame par frame
+  et l'usage spontané par un vrai LLM sont vérifiés séparément (scripts de
+  fumée, pas reproductibles en pytest pur).
 
 `tests/conftest.py` fournit `FakeLLMProvider` (sous-classe de
 `LLMProvider` qui rejoue une liste de réponses brutes préparées à

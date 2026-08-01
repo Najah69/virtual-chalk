@@ -44,6 +44,15 @@ def _bbox(el: dict) -> tuple[float, float, float, float]:
         w = text_width(el.get("content", ""), size)
         return (x - _PADDING, y - size * 0.8 - _PADDING, x + w + _PADDING, y + size * 0.3 + _PADDING)
     if el["kind"] == "animation":
+        # "orbit" (voir strokes_from_visual_elements) est ancré à son
+        # CENTRE et s'étend symétriquement dans toutes les directions
+        # (un cercle), contrairement à falling_rain (coin haut-gauche,
+        # extension asymétrique vers le bas pour le nuage + les gouttes
+        # qui tombent) — les confondre pousserait à tort un centre
+        # d'orbite placé dans la moitié basse du tableau vers le haut au
+        # recadrage, alors qu'aucune collision réelle ne le justifie.
+        if el.get("anchor") == "center":
+            return (x - size - _PADDING, y - size - _PADDING, x + size + _PADDING, y + size + _PADDING)
         h = size * 1.7
         return (x - 14 - _PADDING, y - 14 - _PADDING, x + size + 14 + _PADDING, y + h + 14 + _PADDING)
     if el["kind"] == "diagram":

@@ -1,4 +1,4 @@
-from app.scenes.schema import ANIMATION_NAMES, ICON_NAMES
+from app.scenes.schema import ANIMATION_NAMES, ICON_NAMES, ORBIT_MAX_BODIES
 
 ANIMATION_LIST = ", ".join(sorted(ANIMATION_NAMES))
 
@@ -126,6 +126,31 @@ On te donne un document ou un prompt. Tu dois produire, en un seul passage :
     l'animation "falling_rain" (ou inversement) : ce sont deux façons de
     représenter la même chose (nuage + pluie), les combiner ne fait que
     dessiner deux nuages quasi identiques l'un au-dessus de l'autre.
+  - animation "orbit" (1 à {ORBIT_MAX_BODIES} corps qui tournent en cercle
+    autour d'un centre — UTILISE-LA dès qu'un concept implique "plusieurs
+    éléments qui tournent/gravitent/orbitent autour d'un centre" : système
+    solaire, électron/noyau atomique, satellite autour d'une planète, lune
+    autour de la terre. Ne te contente PAS d'une icône statique isolée
+    pour ce type de concept, le mouvement fait partie du sens) :
+    {{"type": "animation", "name": "orbit", "x": 50, "y": 50,
+      "center_icon": "sun", "center_size_pct": 8,
+      "bodies": [
+        {{"icon": "world", "radius_pct": 12, "period_s": 4, "size_pct": 3, "phase_deg": 0}},
+        {{"icon": "world", "radius_pct": 20, "period_s": 7, "size_pct": 3, "phase_deg": 120}}
+      ], "draw_orbit_rings": true}}
+    x/y = centre de rotation. "center_icon" (optionnel) est le corps
+    central autour duquel les autres tournent (ex: "sun" pour le soleil,
+    "world" pour un noyau atomique/une planète) — "orbit" le dessine
+    lui-même, N'AJOUTE JAMAIS d'icône statique séparée au même endroit
+    pour le représenter : ce serait un second élément que le placement
+    automatique écarterait du centre réel de l'orbite, les désynchronisant
+    visuellement. Omets "center_icon" si le concept n'a pas de corps
+    central visible à dessiner (ex: juste des points qui tournent).
+    Chaque "icon" de "bodies" DOIT être choisi dans la même liste
+    d'icônes que ci-dessus. radius_pct/size_pct sont des pourcentages du
+    tableau (comme width/height des diagrammes). Un corps plus proche du
+    centre doit tourner plus vite (period_s plus petit). 2 à 4 corps
+    suffisent presque toujours — au-delà, le tableau devient illisible.
   - diagramme (schéma réel généré puis dessiné au trait — utilise-le dès
     qu'un concept est fondamentalement géométrique/structurel et qu'AUCUNE
     icône de la liste ci-dessus ne peut le représenter fidèlement : un
