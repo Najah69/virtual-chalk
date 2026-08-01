@@ -180,6 +180,36 @@ class Scene:
     mascot_timeline: list[MascotAction] = field(default_factory=list)
 
 
+# Rythme de parole approximatif, pour estimer un budget de caractères à
+# partir d'une durée cible (voir truncate_voice_over_to_duration) — sans
+# rapport avec CHARS_PER_SECOND de app/render/timing.py, qui règle la
+# vitesse du TRACÉ à la craie, pas le débit de la voix off. Partagée
+# (pas dupliquée) entre app/edit/nl_commands.py (commande NL "raccourcis
+# la scène à Xs") et app/scenes/timeline.py (glisser un bloc de scène sur
+# la timeline) : les deux doivent produire EXACTEMENT le même résultat
+# pour un même texte/une même durée cible, décision explicite plutôt que
+# deux implémentations qui pourraient dériver l'une de l'autre.
+VOICE_TRUNCATE_CHARS_PER_SECOND = 15.0
+
+
+def truncate_voice_over_to_duration(scene: Scene, target_duration: float) -> None:
+    """Raccourcit `scene.voice_over` pour tenir dans `target_duration`
+    (coupure à une fin de phrase si possible, sinon coupure brute avec
+    "…"), et fixe `scene.duration_sec` à cette valeur — provisoire tant
+    que la scène n'a pas été re-synthétisée (voir docs/architecture.md) :
+    la durée RÉELLE sera fixée par `Pipeline.resynthesize_scene` une fois
+    le nouvel audio généré, cette fonction ne fait qu'estimer un budget de
+    caractères plausible, sans appel LLM/TTS. N'allonge jamais un texte
+    déjà plus court que le budget — seul le raccourci est géré ici."""
+    max_chars = max(20, int(target_duration * VOICE_TRUNCATE_CHARS_PER_SECOND))
+    voice_over = scene.voice_over
+    if len(voice_over) > max_chars:
+        truncated = voice_over[:max_chars]
+        cut = max(truncated.rfind(". "), truncated.rfind("! "), truncated.rfind("? "))
+        scene.voice_over = truncated[: cut + 1].strip() if cut > 0 else truncated.strip() + "…"
+    scene.duration_sec = target_duration
+
+
 @dataclass
 class Section:
     title: str

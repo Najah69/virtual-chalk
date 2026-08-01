@@ -1329,6 +1329,91 @@ Nécessitait d'exposer `applied_actions` (déjà présent côté
 `EditResult` mais jusque-là absent du dict JSON renvoyé par
 `Api.apply_edit_command`) en plus de `skipped_actions`.
 
+### Timeline éditable (TimelineJSON) — Tâche 1
+
+Directive apportée par un document externe (blueprint "Timeliner +
+Anime.js") : une timeline visuelle pour voir/réordonner les scènes et les
+événements mascotte/images, plutôt que de passer uniquement par la
+commande en langage naturel ci-dessus. Intégrée après vérification contre
+le schéma réel — le document source suppose une classe `ImageElement`
+(inexistante : une image est un `Stroke(kind="image", ...)` comme un
+autre) et un `Scene.order`/`index` (inexistant : l'ordre est la position
+dans `Project.scenes`) — et deux décisions explicites pour résoudre deux
+frictions d'architecture avant d'écrire du code :
+
+**Frictions résolues** :
+- *Édition de durée par glisser* : `scene.duration_sec` n'est pas une
+  valeur libre, elle est DÉRIVÉE de l'audio réellement synthétisé
+  (`Pipeline.resynthesize_scene`, `scene.duration_sec = duration`). La
+  faire glisser sans toucher au texte désynchroniserait voix et tableau.
+  Décision : réutiliser EXACTEMENT la sémantique déjà existante de la
+  commande NL "raccourcis la scène à Xs" (troncature du texte à une fin
+  de phrase + durée provisoire, une resynthèse ultérieure fixe la durée
+  réelle) — voir `truncate_voice_over_to_duration` ci-dessous, extraite
+  de `app/edit/nl_commands.py::_apply_update_scene_duration` pour que les
+  deux points d'entrée produisent un résultat identique (vérifié par
+  test, pas juste par relecture — voir Tests plus bas), plutôt que deux
+  implémentations qui pourraient dériver l'une de l'autre.
+- *Déterminisme du rendu* (pour la Tâche 4, Anime.js — pas encore
+  commencée) : le rendu final ne tourne jamais en temps réel
+  (`FrameCapture.renderAtTime(t)`, un instant exact à la fois). Anime.js
+  est prévu en `autoplay: false`, piloté par `.seek(t)` plutôt qu'en
+  temps réel, pour garder cette garantie. Décision : Anime.js vient en
+  PLUS du moteur d'animation existant (`falling_rain`/`orbit`/mascotte),
+  ne les remplace pas.
+
+**`app/scenes/schema.py`** : `truncate_voice_over_to_duration(scene,
+target_duration)` — extraite de `nl_commands.py`, désormais partagée.
+`VOICE_TRUNCATE_CHARS_PER_SECOND` (15.0 caractères/s, un rythme de parole
+approximatif — sans rapport avec `CHARS_PER_SECOND` de
+`app/render/timing.py`, qui règle la vitesse du TRACÉ à la craie).
+
+**`app/scenes/timeline.py`** (nouveau, même principe que
+`project_file.py` : un module frère de `schema.py` pour un souci
+particulier) :
+- `project_to_timeline(project) -> dict` — vue dérivée, pas un nouveau
+  modèle persisté : `{"scenes": [{scene_id, start, duration}, ...],
+  "tracks": {"mascot": [...], "images": [...]}}`. `start` d'une scène est
+  sa position ABSOLUE dans le montage final (réutilise
+  `Project.scene_start_times`, déjà existante). Chaque entrée
+  mascotte/image porte un `index` (position dans `scene.mascot_timeline`/
+  `scene.strokes`) pour être retrouvée sans ambiguïté au moment de
+  réappliquer — deux phases mascotte peuvent partager le même
+  `action_type` (ex: deux `"idle"`), les distinguer par contenu seul
+  serait fragile. Volontairement grossier (niveau scène + quelques
+  événements, pas de micro-keyframes toutes les 100 ms) — conforme à la
+  contrainte du document source.
+- **Limite assumée, pas silencieuse** : la piste "images" ne couvre que
+  l'apparition (`start_sec`/`end_sec`, le même fondu que le reste du
+  moteur) — aucun mécanisme de disparition ni de zoom n'existe pour une
+  image déjà posée ("la craie posée ne bouge plus" reste le principe du
+  moteur), contrairement à ce qu'envisageait le document source. Ajouter
+  ces capacités est un chantier séparé (probablement à rattacher à la
+  grammaire de mouvement, pas à la timeline elle-même).
+- `timeline_to_project(timeline, project) -> TimelineApplyResult` —
+  applique EN PLACE (même `Project`, pas une copie — même convention que
+  `apply_nl_edit_command`). `TimelineApplyResult` (`reordered`,
+  `changed_scene_ids`, `voice_changed_scene_ids`) ne déclenche JAMAIS
+  elle-même de resynthèse/rendu — aucun appel LLM/TTS/rendu dans ce
+  module, l'orchestration revient à un futur `Api.update_timeline`
+  (Tâche 3, pas encore écrite). `scene_id`/`index` inconnus ou périmés
+  (timeline affichée avant un changement fait par ailleurs) sont ignorés
+  silencieusement plutôt que de lever une exception ; un réordonnancement
+  n'est appliqué que si l'ensemble des `scene_id` référencés correspond
+  EXACTEMENT à celui du projet (jamais de scène qui disparaît
+  silencieusement parce qu'absente d'un JSON partiel/périmé).
+
+**Bug trouvé en écrivant les tests, pas en relisant le code** : la
+première version marquait une scène "changée" dès qu'une entrée
+mascotte/image était traitée avec succès, même si les valeurs reçues
+étaient IDENTIQUES aux valeurs actuelles — cassant l'idempotence attendue
+d'un aller-retour `project_to_timeline` → `timeline_to_project` sans
+aucune édition (un test dédié l'a détecté immédiatement : la scène
+apparaissait à tort dans `changed_scene_ids`). Corrigé en ne marquant
+"changé" que lorsqu'au moins une valeur diffère réellement de l'état
+actuel — même principe que la comparaison à tolérance déjà utilisée pour
+la durée (`_DURATION_EPSILON_SEC`).
+
 ## Arborescence
 
 ```
@@ -1458,6 +1543,25 @@ appel réseau/LLM/TTS ni de vrai rendu ffmpeg/capture d'écran :
   éditeur (`Api.update_scene_strokes`). Le mouvement réel frame par frame
   et l'usage spontané par un vrai LLM sont vérifiés séparément (scripts de
   fumée, pas reproductibles en pytest pur).
+- `test_timeline.py` — Tâche 1 de la timeline éditable :
+  `project_to_timeline`/`timeline_to_project`, `start` absolu correct par
+  scène, index mascotte/image sans ambiguïté, réordonnancement défensif
+  (refusé si l'ensemble des `scene_id` ne correspond pas exactement),
+  troncature de durée identique à la commande NL équivalente (comparaison
+  directe des deux chemins, pas juste une relecture), et surtout
+  l'idempotence d'un aller-retour sans édition (`changed_scene_ids`
+  vide) — a immédiatement débusqué un vrai bug (scène marquée "changée"
+  à tort par des entrées mascotte/image identiques à l'existant, voir
+  plus haut).
+- `test_voice_truncation.py` — `truncate_voice_over_to_duration` (extraite
+  de la commande NL lors du partage avec la timeline) : coupure à une fin
+  de phrase, repli en ellipse sans ponctuation, texte déjà court laissé
+  intact, plancher de caractères minimal. Aucune couverture n'existait
+  pour cette heuristique avant ce partage — comblée à cette occasion.
+- `test_nl_commands.py` (complété) — `update_scene_duration` bout en
+  bout via `apply_nl_edit_command`, et preuve que la commande NL et
+  `timeline_to_project` produisent un résultat identique pour le même
+  texte/la même durée cible.
 
 `tests/conftest.py` fournit `FakeLLMProvider` (sous-classe de
 `LLMProvider` qui rejoue une liste de réponses brutes préparées à

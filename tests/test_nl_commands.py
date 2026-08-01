@@ -95,3 +95,41 @@ def test_recolor_shape_strokes_use_cyclic_palette_not_text_colors():
 
     from app.render.theme_registry import palette_for_theme
     assert project.scenes[0].strokes[0].color == palette_for_theme("chalk_board")[0]
+
+
+def test_apply_nl_edit_command_update_scene_duration_truncates_and_reports_voice_change():
+    """Comblait un vrai trou de couverture : update_scene_duration n'avait
+    aucun test avant l'extraction de sa logique en fonction partagée
+    (truncate_voice_over_to_duration, voir app/scenes/timeline.py)."""
+    project = _make_project()
+    project.scenes[0].voice_over = "Une phrase assez longue pour dépasser le budget alloué à la scène."
+    actions = {"actions": [{"action": "update_scene_duration", "scene_index": 0, "max_duration": 2.0}]}
+    llm = FakeLLMProvider([json.dumps(actions)])
+
+    result = apply_nl_edit_command(project, "raccourcis la scène 1 à 2 secondes", llm)
+
+    assert result.error is None
+    assert project.scenes[0].duration_sec == 2.0
+    assert len(project.scenes[0].voice_over) < len("Une phrase assez longue pour dépasser le budget alloué à la scène.")
+    assert result.changed_scene_ids == ["s0"]
+    assert result.voice_changed_scene_ids == ["s0"]
+
+
+def test_apply_nl_edit_command_update_scene_duration_uses_the_shared_helper():
+    """La commande NL doit produire EXACTEMENT le même résultat que
+    l'appel direct à truncate_voice_over_to_duration -- preuve que la
+    logique est vraiment partagée avec app/scenes/timeline.py, pas
+    seulement similaire."""
+    from app.scenes.schema import truncate_voice_over_to_duration
+
+    project_a = _make_project()
+    project_a.scenes[0].voice_over = "Une phrase assez longue pour dépasser le budget alloué à la scène."
+    project_b = _make_project()
+    project_b.scenes[0].voice_over = "Une phrase assez longue pour dépasser le budget alloué à la scène."
+
+    actions = {"actions": [{"action": "update_scene_duration", "scene_index": 0, "max_duration": 2.0}]}
+    apply_nl_edit_command(project_a, "raccourcis", FakeLLMProvider([json.dumps(actions)]))
+    truncate_voice_over_to_duration(project_b.scenes[0], 2.0)
+
+    assert project_a.scenes[0].voice_over == project_b.scenes[0].voice_over
+    assert project_a.scenes[0].duration_sec == project_b.scenes[0].duration_sec

@@ -29,15 +29,10 @@ from app.scenes.schema import (
     default_mascot_timeline,
     remove_mascot_timeline,
     strokes_from_visual_elements,
+    truncate_voice_over_to_duration,
 )
 
 logger = logging.getLogger(__name__)
-
-# Rythme de parole approximatif, pour estimer un budget de caractères a
-# partir d'une duree cible (update_scene_duration) — sans rapport avec
-# CHARS_PER_SECOND de app/render/timing.py, qui regle la vitesse du TRACE
-# a la craie, pas le debit de la voix off.
-_CHARS_PER_SECOND_SPEECH = 15.0
 
 VALID_THEMES = ("chalk_board", "whiteboard_marker")
 
@@ -71,18 +66,10 @@ def _resolve_index(project: Project, index: int) -> int:
 def _apply_update_scene_duration(project: Project, action: dict, result: EditResult) -> None:
     scene = project.scenes[_resolve_index(project, int(action["scene_index"]))]
     max_duration = float(action["max_duration"])
-    # duration_sec n'est qu'une estimation tant que la scene n'a pas ete
-    # re-synthetisee (voir docs/architecture.md) : on tronque voice_over a
-    # une longueur cohérente avec le budget demande (heuristique locale,
-    # sans appel LLM supplementaire) ; Pipeline.resynthesize_scene fixera
-    # ensuite la duree reelle a partir du nouvel audio.
-    max_chars = max(20, int(max_duration * _CHARS_PER_SECOND_SPEECH))
-    voice_over = scene.voice_over
-    if len(voice_over) > max_chars:
-        truncated = voice_over[:max_chars]
-        cut = max(truncated.rfind(". "), truncated.rfind("! "), truncated.rfind("? "))
-        scene.voice_over = truncated[: cut + 1].strip() if cut > 0 else truncated.strip() + "…"
-    scene.duration_sec = max_duration
+    # Même heuristique que le glisser d'un bloc de scène sur la timeline
+    # (voir app/scenes/timeline.py) — partagée, pas dupliquée, voir
+    # truncate_voice_over_to_duration.
+    truncate_voice_over_to_duration(scene, max_duration)
     result.changed_scene_ids.append(scene.scene_id)
     result.voice_changed_scene_ids.append(scene.scene_id)
 
