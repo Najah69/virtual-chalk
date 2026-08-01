@@ -217,6 +217,56 @@ document.getElementById("btn-pick-image").addEventListener("click", async () => 
   status.textContent = `"${picked.name}" — cliquez sur le tableau pour la placer (coin haut-gauche), redimensionnable ensuite.`;
 });
 
+// --- Bibliothèque d'icônes (style craie, vignettes) --------------------------
+//
+// Les icônes existent depuis le début du projet (ICON_NAMES côté Python,
+// tracés précalculés dans icon_paths.js côté JS — déjà utilisées par la
+// génération LLM) mais n'étaient jamais montrées visuellement nulle
+// part : impossible de savoir ce qui était disponible sans lire le code.
+// Chaque vignette est dessinée une seule fois au premier affichage avec
+// le même moteur craie/feutre que le canvas principal
+// (EditorCanvas.drawIconThumbnail), pour un aperçu fidèle, pas une icône
+// générique.
+let iconLibraryBuilt = false;
+
+function buildIconLibrary() {
+  if (iconLibraryBuilt) return;
+  const library = document.getElementById("icon-library");
+  const iconNames = Object.keys(window.ICON_PATHS || {}).sort();
+  library.innerHTML = "";
+  for (const name of iconNames) {
+    const swatch = document.createElement("div");
+    swatch.className = "icon-swatch";
+    const canvas = document.createElement("canvas");
+    canvas.width = 96;
+    canvas.height = 96;
+    const label = document.createElement("span");
+    label.textContent = name;
+    swatch.appendChild(canvas);
+    swatch.appendChild(label);
+    swatch.addEventListener("click", () => {
+      if (!selectedSceneId) return;
+      window.EditorCanvas.startPlacingNewIcon(name);
+      document.getElementById("image-insert-status").textContent =
+        `Icône "${name}" — cliquez sur le tableau pour la placer.`;
+    });
+    library.appendChild(swatch);
+    window.EditorCanvas.drawIconThumbnail(canvas, name, currentProject ? currentProject.theme : "chalk_board");
+  }
+  iconLibraryBuilt = true;
+}
+
+document.getElementById("btn-toggle-icons").addEventListener("click", () => {
+  const library = document.getElementById("icon-library");
+  const showing = library.style.display !== "none";
+  if (showing) {
+    library.style.display = "none";
+  } else {
+    buildIconLibrary();
+    library.style.display = "grid";
+  }
+});
+
 // --- Sauvegarde des éditions visuelles + re-render --------------------------
 
 // Envoie l'état actuel des strokes (édités côté canvas) à Python avant

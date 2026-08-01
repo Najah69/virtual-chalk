@@ -251,8 +251,9 @@
   // --- État d'interaction souris -------------------------------------------
 
   let dragState = null; // { mode: "move" | "resize", stroke, corner, startX, startY, orig }
-  let placingKind = null; // "text" | "image" en attente de placement (voir startPlacingNewText/Image)
+  let placingKind = null; // "text" | "image" | "icon" en attente de placement (voir startPlacingNew*)
   let pendingImageData = null;
+  let pendingIconName = null;
 
   function selectStroke(stroke) {
     selectedStroke = stroke;
@@ -279,6 +280,15 @@
       const stroke = _addImageStrokeAt(pt.x, pt.y, pendingImageData);
       placingKind = null;
       pendingImageData = null;
+      canvas.style.cursor = "default";
+      selectStroke(stroke);
+      notifySceneChanged();
+      return;
+    }
+    if (placingKind === "icon") {
+      const stroke = _addIconStrokeAt(pt.x, pt.y, pendingIconName);
+      placingKind = null;
+      pendingIconName = null;
       canvas.style.cursor = "default";
       selectStroke(stroke);
       notifySceneChanged();
@@ -484,6 +494,26 @@
     return stroke;
   }
 
+  // Doit rester synchronisé avec ICON_SIZE dans app/scenes/schema.py.
+  const ICON_SIZE = 220.0;
+
+  function _addIconStrokeAt(x, y, iconName) {
+    const palette = (editorTheme && editorTheme.palette) || ["#ffffff"];
+    const stroke = {
+      points: [{ x, y }],
+      color: palette[0],
+      width: ICON_SIZE,
+      kind: "icon",
+      text: iconName,
+      height: 0.0,
+      start_sec: 0.0,
+      end_sec: 0.0,
+      image_data: "",
+    };
+    editorScene.strokes.push(stroke);
+    return stroke;
+  }
+
   function deleteSelected() {
     if (!selectedStroke || !editorScene) return;
     const idx = editorScene.strokes.indexOf(selectedStroke);
@@ -544,10 +574,33 @@
       pendingImageData = dataUri;
       canvas.style.cursor = "crosshair";
     },
+    // Bibliothèque d'icônes (voir editor.js) : nom parmi
+    // Object.keys(window.ICON_PATHS), déjà chargé via icon_paths.js.
+    startPlacingNewIcon(iconName) {
+      placingKind = "icon";
+      pendingIconName = iconName;
+      canvas.style.cursor = "crosshair";
+    },
     cancelPlacing() {
       placingKind = null;
       pendingImageData = null;
+      pendingIconName = null;
       canvas.style.cursor = "default";
+    },
+
+    // Dessine une icône à taille de vignette sur un canvas fourni par
+    // l'appelant (bibliothèque d'icônes, editor.js) — même outil
+    // craie/feutre que le canvas principal, pour un aperçu fidèle.
+    drawIconThumbnail(targetCanvas, iconName, themeId) {
+      const thumbCtx = targetCanvas.getContext("2d");
+      const theme = window.getTheme(themeId);
+      const size = Math.min(targetCanvas.width, targetCanvas.height) * 0.7;
+      const x = (targetCanvas.width - size) / 2;
+      const y = (targetCanvas.height - size) / 2;
+      const points = window.iconToPoints(iconName, x, y, size);
+      const stroke = { points, color: (theme.palette && theme.palette[0]) || "#333", width: size, kind: "icon", text: iconName, _lastDrawnCount: 0 };
+      thumbCtx.clearRect(0, 0, targetCanvas.width, targetCanvas.height);
+      window.TOOLS[theme.tool](thumbCtx, stroke, 1);
     },
 
     // Notifie le changement (texte édité, couleur changée...) et

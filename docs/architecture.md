@@ -775,11 +775,11 @@ calculé à la volée et mis en cache sur le stroke dans des champs préfixés
 - **Redimensionnement** (Phase 3) : 4 poignées aux coins, uniquement
   pour les kinds à taille explicite (image, icône, animation,
   diagramme) — ajuste `width`/`height` et l'ancre selon le coin tiré.
-- **Ajout** (Phase 4) : "+ Texte"/"+ Image..." arment un mode
-  "placement" (`startPlacingNewText`/`startPlacingNewImage`) — le
-  prochain clic sur le canvas pose le nouvel élément à cet endroit
-  (coin haut-gauche pour une image, redimensionnable ensuite comme
-  n'importe quel autre élément).
+- **Ajout** (Phase 4) : "+ Texte"/"+ Image..."/"+ Icône..." arment un mode
+  "placement" (`startPlacingNewText`/`startPlacingNewImage`/
+  `startPlacingNewIcon`) — le prochain clic sur le canvas pose le nouvel
+  élément à cet endroit (coin haut-gauche pour une image/icône,
+  redimensionnable ensuite comme n'importe quel autre élément).
 - **Édition de texte inline** (Phase 5) : double-clic sur un texte
   superpose un `<textarea>` HTML positionné exactement sur sa boîte
   englobante (conversion espace canvas réel ↔ espace écran) ; validé sur
@@ -787,6 +787,21 @@ calculé à la volée et mis en cache sur le stroke dans des champs préfixés
 - **Suppression** : bouton dédié dans le panneau de propriétés (élément
   sélectionné), pas de racourci clavier pour éviter une suppression
   accidentelle en tapant dans un champ de texte adjacent.
+
+**Bibliothèque d'icônes** (retour utilisateur : "je sais que tu utilises
+une bibliothèque de sprites stylisés à la craie, je veux pouvoir la voir
+et les insérer") — les 48 icônes existaient depuis le tout début du
+projet (`ICON_NAMES` côté Python, tracés précalculés dans
+`icon_paths.js`/`window.ICON_PATHS` côté JS, déjà utilisées par la
+génération LLM) mais n'avaient jamais été montrées visuellement nulle
+part. Bouton "+ Icône..." affiche une grille de vignettes
+(`buildIconLibrary`, `editor.js`) — une par clé de `window.ICON_PATHS`
+(pas besoin de dupliquer `ICON_NAMES` en JS), chacune dessinée une seule
+fois avec le même outil craie/feutre que le canvas principal
+(`EditorCanvas.drawIconThumbnail`, réutilise `iconToPoints`/
+`window.TOOLS[...]`) pour un aperçu fidèle plutôt qu'une icône
+générique. Clic sur une vignette → mode placement, identique à "+ Texte"/
+"+ Image".
 
 **Persistance** : chaque manipulation ne mute que l'état JS local et
 redessine — aucun aller-retour réseau à chaque pixel de glissé/
