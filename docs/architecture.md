@@ -835,21 +835,62 @@ la vidéo finale complète à partir de ce cache — avant ce correctif, le
 clip re-rendu n'était jamais réintégré au montage, qui restait donc
 périmé après une édition ciblée.
 
-**Bug corrigé — lecteur vidéo intégré (étapes 5/6 de l'assistant)** :
-`Api.start_pipeline_from_script` renvoie un chemin Windows brut (ex:
-`C:\Users\...\video.mp4`), et `ui/js/app.js` l'assignait directement à
-`<video>.src` — ce n'est pas une URL valide, le navigateur échoue
-silencieusement à charger le média (aucune erreur visible, juste "Impossible
-de lire les fichiers multimédias" côté accessibilité). `ui/index.html` est
-servie via le mini serveur HTTP local de pywebview
-(`http://localhost:<port>/...`, voir plus bas "Éditeur visuel WYSIWYG"
-pour le détail de ce mécanisme), mais la vidéo générée vit hors de sa
-racine servie (dossier de sortie utilisateur) — impossible de la
-référencer par une URL relative à ce serveur. Corrigé via
-`toFileUri()` (`ui/js/app.js`), qui convertit en URI `file://` avant
-assignation : un `<video>`/`<img>` peut afficher un fichier `file://`
-même depuis une page `http://`, contrairement à un canvas (qui, lui, se
-retrouve "tainted" en lecture de pixels — voir plus bas).
+**Bug corrigé — lecteur vidéo intégré (étapes 5/6 de l'assistant, et
+aperçu de re-rendu de l'éditeur)** : `Api.start_pipeline_from_script`
+renvoyait un chemin Windows brut (ex: `C:\Users\...\video.mp4`), et
+`ui/js/app.js` l'assignait directement à `<video>.src` — pas une URL
+valide, le navigateur échoue silencieusement à charger le média (aucune
+erreur visible, juste "Impossible de lire les fichiers multimédias" côté
+accessibilité).
+
+Premier correctif tenté (**incorrect, corrigé depuis**) : convertir en URI
+`file://` côté JS (`toFileUri()`) avant assignation, sur l'hypothèse
+qu'un `<video>`/`<img>` peut afficher un fichier `file://` même depuis
+une page `http://`. **Faux en pratique** : `ui/index.html`/`ui/editor/
+editor.html` sont servies via le mini serveur HTTP local de pywebview
+(`http://localhost:<port>/...`, voir plus bas "Éditeur visuel WYSIWYG"),
+et WebView2/Chromium **refuse** de charger un `<video src="file://...">`
+depuis une page qui n'est pas elle-même `file://` — vérifié
+empiriquement (`video.error.message === "Media load rejected by URL
+safety check"`, `video.error.code === 4`), pas juste un détail non
+documenté. Ce premier correctif faisait passer les vérifications
+superficielles (le `.src` assigné était syntaxiquement valide, l'appel
+Python ne levait aucune exception) mais n'avait jamais été vérifié par
+une vraie lecture — les contrôles du lecteur s'affichaient, mais rien ne
+se jouait. `webview.settings["ALLOW_FILE_URLS"]` (`--allow-file-access-
+from-files`) ne résout PAS ce cas non plus (vérifié) : ce flag ne lève
+que les restrictions file://→file://, pas http://→file://.
+
+Correctif définitif : `app/local_media_server.py`, un second petit
+serveur HTTP local dédié (`http.server.ThreadingHTTPServer`, port
+aléatoire sur `127.0.0.1`), avec support des requêtes `Range` (206
+Partial Content — nécessaire pour que le lecteur puisse chercher dans la
+vidéo, pas juste la lire séquentiellement). `serve(path)` enregistre un
+chemin sous un jeton aléatoire (pas le nom de fichier — évite toute
+collision et ne révèle pas l'arborescence réelle du disque) et renvoie
+son URL (`http://127.0.0.1:<port>/<jeton>`) ; démarre paresseusement au
+premier appel. Ne sert **que** les chemins explicitement enregistrés par
+l'app (jamais un dossier entier) — même si le serveur n'écoute que sur
+127.0.0.1 (donc déjà inaccessible depuis le réseau), pas de raison
+d'exposer plus que ce que l'app a elle-même généré. `Api.
+start_pipeline_from_script` (champ `video_url`, en plus de `video_path`
+qui reste le chemin brut pour l'affichage/"Ouvrir le dossier"), `Api.
+rerender_scene`/`Api.rerender_all` (valeur de retour, remplace
+directement l'ancien chemin brut) l'utilisent tous les trois ; `toFileUri()`
+a été retiré des deux fichiers JS.
+
+Pourquoi une DEUXIÈME instance de serveur local plutôt que d'étendre
+celui de pywebview (déjà utilisé pour `ui/index.html` elle-même) : sa
+racine (`server.root_path`) est calculée une seule fois comme le plus
+petit ancêtre commun des URLs locales passées à `webview.start()`
+(limité à l'arborescence de l'app), et sa route `bottle.static_file`
+refuse tout chemin en dehors de cette racine (protection anti-traversal)
+— la vidéo générée vit dans le dossier de sortie choisi par
+l'utilisateur, hors de cette arborescence. La copier dans l'arborescence
+de l'app pour la rendre servable n'est pas fiable une fois installée
+(`Program Files` n'est pas inscriptible sans élévation) ; pywebview
+n'expose par ailleurs aucun point d'extension pour ajouter une route
+supplémentaire à son propre serveur.
 
 ## Édition post-génération
 
@@ -992,9 +1033,10 @@ l'utilisateur n'avait aucun moyen de constater qu'un re-rendu avait
 réellement eu lieu. `editor.js::setRerenderBusy`/`showRerenderResult`
 désactivent maintenant les deux boutons pendant l'opération (statut
 visuellement marqué, couleur + gras) et affichent le résultat dans un
-`<video>` intégré au panneau (`#rerender-preview`, même conversion
-`toFileUri` que `ui/js/app.js`) — plus besoin de quitter l'éditeur pour
-constater le résultat.
+`<video>` intégré au panneau (`#rerender-preview`, servi via
+`app/local_media_server.py` — voir plus haut "Bug corrigé — lecteur
+vidéo intégré") — plus besoin de quitter l'éditeur pour constater le
+résultat.
 
 **Propriétés de scène** (voix off) : `prop-duration` est maintenant un
 affichage en lecture seule (la durée est dérivée de l'audio synthétisé,
@@ -1257,6 +1299,17 @@ appel réseau/LLM/TTS ni de vrai rendu ffmpeg/capture d'écran :
   centrage/épinglage du texte "titre" par `strokes_from_visual_elements`,
   et respect de `pinned_x`/préférence d'axe selon l'orientation par
   `resolve_overlaps` (`app/render/layout.py`).
+- `test_local_media_server.py` — `app/local_media_server.py` : parsing
+  d'en-tête `Range` (spec complète, ouverte, bornée au-delà de la taille
+  du fichier), URLs distinctes par appel, et un vrai aller-retour HTTP
+  (`urllib.request`) confirmant qu'un fichier enregistré est
+  effectivement accessible (200 complet, 206 partiel) — la seule vraie
+  "vérification de lecture vidéo" faisable en pytest pur ; la lecture
+  réelle dans un `<video>` d'une vraie fenêtre webview est vérifiée
+  séparément via un script de fumée (non reproductible ici).
+- `test_editor_wysiwyg.py` (mis à jour) — `rerender_scene`/`rerender_all`
+  renvoient désormais une URL servie (`http://127.0.0.1:...`) plutôt que
+  le chemin brut, cohérent avec le correctif ci-dessus.
 
 `tests/conftest.py` fournit `FakeLLMProvider` (sous-classe de
 `LLMProvider` qui rejoue une liste de réponses brutes préparées à

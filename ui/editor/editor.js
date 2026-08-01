@@ -8,14 +8,6 @@
 // propriétés contextuel, commande NL, journal) et appelle EditorCanvas
 // pour charger/relire l'état visuel de la scène sélectionnée.
 
-// Même conversion que ui/js/app.js::toFileUri (page séparée, contexte JS
-// séparé — voir ce fichier pour le détail : un <video>.src ne peut pas
-// être un chemin Windows brut, ni une URL relative au serveur local de
-// l'éditeur puisque la vidéo vit hors de sa racine servie).
-function toFileUri(windowsPath) {
-  return "file:///" + encodeURI(windowsPath.replace(/\\/g, "/"));
-}
-
 let currentProject = null;
 let selectedSceneId = null;
 // Journal des commandes d'édition NL de la session courante (pas persisté
@@ -286,12 +278,11 @@ async function saveCurrentSceneEdits() {
 // retour visible était un petit texte gris discret pendant que les deux
 // boutons restaient cliquables comme s'ils ne faisaient rien — un
 // utilisateur n'avait aucun moyen de savoir qu'un re-rendu était
-// réellement en cours, ni de voir le résultat sans quitter l'éditeur
-// (lecteur vidéo de l'assistant lui-même cassé jusqu'à ce correctif,
-// voir ui/js/app.js::toFileUri). Les deux boutons sont maintenant
-// désactivés pendant l'opération, le statut est visuellement marqué
-// (couleur + gras), et le résultat s'affiche directement dans un lecteur
-// vidéo intégré au panneau, sans avoir à ouvrir le dossier.
+// réellement en cours, ni de voir le résultat sans quitter l'éditeur.
+// Les deux boutons sont maintenant désactivés pendant l'opération, le
+// statut est visuellement marqué (couleur + gras), et le résultat
+// s'affiche directement dans un lecteur vidéo intégré au panneau, sans
+// avoir à ouvrir le dossier.
 function setRerenderBusy(busy, message) {
   const status = document.getElementById("rerender-status");
   const sceneBtn = document.getElementById("btn-rerender-scene");
@@ -302,13 +293,17 @@ function setRerenderBusy(busy, message) {
   status.className = `rerender-status ${busy ? "busy" : ""}`;
 }
 
-function showRerenderResult(success, message, videoPath) {
+function showRerenderResult(success, message, videoUrl) {
   const status = document.getElementById("rerender-status");
   status.textContent = message;
   status.className = `rerender-status ${success ? "ok" : "error"}`;
-  if (success && videoPath) {
+  if (success && videoUrl) {
     const preview = document.getElementById("rerender-preview");
-    preview.src = toFileUri(videoPath);
+    // videoUrl est déjà une URL servie par Api.rerender_scene/rerender_all
+    // (app/local_media_server.py) — un <video src="file://..."> est
+    // refusé par WebView2/Chromium depuis une page http:// (constaté
+    // empiriquement, voir ui/js/app.js pour le détail).
+    preview.src = videoUrl;
     preview.style.display = "block";
   }
 }
@@ -318,8 +313,8 @@ document.getElementById("btn-rerender-scene").addEventListener("click", async ()
   setRerenderBusy(true, "Re-rendu de la scène en cours (peut prendre jusqu'à quelques minutes)...");
   try {
     await saveCurrentSceneEdits();
-    const videoPath = await window.pywebview.api.rerender_scene(selectedSceneId);
-    showRerenderResult(true, "Scène re-rendue — vidéo à jour ci-dessous.", videoPath);
+    const videoUrl = await window.pywebview.api.rerender_scene(selectedSceneId);
+    showRerenderResult(true, "Scène re-rendue — vidéo à jour ci-dessous.", videoUrl);
   } catch (err) {
     showRerenderResult(false, `Erreur : ${err}`, null);
   } finally {
@@ -332,8 +327,8 @@ document.getElementById("btn-rerender-all").addEventListener("click", async () =
   setRerenderBusy(true, "Re-rendu en cours (seules les scènes modifiées sont ré-encodées)...");
   try {
     if (selectedSceneId) await saveCurrentSceneEdits();
-    const videoPath = await window.pywebview.api.rerender_all();
-    showRerenderResult(true, "Montage final à jour — vidéo ci-dessous.", videoPath);
+    const videoUrl = await window.pywebview.api.rerender_all();
+    showRerenderResult(true, "Montage final à jour — vidéo ci-dessous.", videoUrl);
   } catch (err) {
     showRerenderResult(false, `Erreur : ${err}`, null);
   } finally {

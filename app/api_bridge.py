@@ -14,6 +14,7 @@ from app.edit.nl_commands import _recolor_strokes_for_theme, apply_nl_edit_comma
 from app.h5p.packager import build_h5p
 from app.i18n.translate import translate_project
 from app.ingestion.text_normalizer import normalize_source
+from app.local_media_server import serve as serve_media
 from app.llm.deepseek import DeepSeekProvider
 from app.llm.gemini import GeminiProvider
 from app.llm.openrouter import OpenRouterProvider
@@ -234,6 +235,13 @@ class Api:
         self._pending_script_project = None
         return {
             "video_path": str(result.video_path),
+            # URL servie via app/local_media_server.py, pas un chemin
+            # brut converti en file:// côté JS (toFileUri) : un
+            # <video src="file://..."> est refusé par WebView2/Chromium
+            # quand la page qui l'affiche est elle-même servie en
+            # http:// (ui/index.html, voir Api.open_editor) — constaté
+            # empiriquement ("Media load rejected by URL safety check").
+            "video_url": serve_media(result.video_path),
             "h5p_path": str(result.h5p_path) if result.h5p_path else None,
         }
 
@@ -356,7 +364,10 @@ class Api:
         video_path = pipeline.rerender_scene(self._current_project, scene_id, self._current_project_dir)
         self._current_video_path = video_path
         save_project_file(self._current_project, self._current_project_save_path())
-        return str(video_path)
+        # URL servie (voir start_pipeline_from_script pour le pourquoi),
+        # pas le chemin brut : editor.js l'assigne directement à
+        # <video id="rerender-preview">.src.
+        return serve_media(video_path)
 
     def rerender_all(self) -> str:
         """Ré-encode le montage final en ne re-rendant que les scènes
@@ -371,7 +382,7 @@ class Api:
         video_path = pipeline.render(self._current_project, self._current_project_dir)
         self._current_video_path = video_path
         save_project_file(self._current_project, self._current_project_save_path())
-        return str(video_path)
+        return serve_media(video_path)
 
     def update_scene_strokes(self, scene_id: str, strokes: list[dict[str, Any]]) -> None:
         """Remplace l'ensemble des strokes d'une scène par l'état édité

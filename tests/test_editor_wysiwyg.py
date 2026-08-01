@@ -93,9 +93,12 @@ def test_rerender_scene_saves_the_project_file(monkeypatch, tmp_path):
     saved = []
     monkeypatch.setattr(api_bridge, "save_project_file", lambda proj, path: saved.append((proj, path)))
 
-    video_path = api.rerender_scene("s0")
+    video_url = api.rerender_scene("s0")
 
-    assert video_path == "video.mp4"
+    # URL servie (app/local_media_server.py), pas le chemin brut : voir
+    # test_rerender_scene_returns_a_url_that_actually_serves_the_video
+    # pour la vérification bout en bout de ce mécanisme.
+    assert video_url.startswith("http://127.0.0.1:")
     assert fake_pipeline.rerendered_scene_id == "s0"
     assert len(saved) == 1
     assert saved[0][0] is project
@@ -149,9 +152,9 @@ def test_rerender_all_uses_pipeline_render_not_per_scene_loop(monkeypatch, tmp_p
     saved = []
     monkeypatch.setattr(api_bridge, "save_project_file", lambda proj, path: saved.append(path))
 
-    video_path = api.rerender_all()
+    video_url = api.rerender_all()
 
-    assert video_path == "video.mp4"
+    assert video_url.startswith("http://127.0.0.1:")
     assert fake_pipeline.rendered_project is project
     assert fake_pipeline.rerendered_scene_id is None  # rerender_scene jamais appelé
     assert len(saved) == 1

@@ -5,20 +5,17 @@
 // (http://localhost:<port>/..., voir Api.open_editor pour le détail de ce
 // mécanisme), mais la vidéo générée vit dans un dossier de sortie
 // quelconque (Documents/Virtual-Chalk Videos/...), hors de la racine
-// servie (base_dir()) — impossible de la référencer par une URL relative
-// à ce serveur. Assigner directement le chemin Windows brut renvoyé par
-// Api.start_pipeline (ex: "C:\Users\...\video.mp4") à <video>.src ne
-// fonctionne PAS : ce n'est pas une URL valide, le navigateur échoue
-// silencieusement à charger le média (constaté : aucune erreur visible,
-// juste "Impossible de lire les fichiers multimédias" côté accessibilité).
-// Convertir en URI file:// résout ça — un <video>/<img> peut afficher un
-// fichier file:// même depuis une page http://, contrairement à un canvas
-// (qui, lui, se retrouve "tainted" en lecture de pixels, voir
-// docs/architecture.md) : ici on ne fait qu'afficher, jamais lire les
-// données par script.
-function toFileUri(windowsPath) {
-  return "file:///" + encodeURI(windowsPath.replace(/\\/g, "/"));
-}
+// servie par ce serveur — impossible de la référencer par une URL
+// relative à celui-ci. Un <video src="file://..."> semblait la solution
+// (utilisé un temps), mais WebView2/Chromium REFUSE de charger un
+// file:// depuis une page qui n'est pas elle-même file:// — constaté
+// empiriquement (video.error.message === "Media load rejected by URL
+// safety check"), pas juste un cas d'usage non documenté. Corrigé côté
+// Python (app/local_media_server.py) : Api.start_pipeline_from_script/
+// rerender_scene/rerender_all renvoient désormais une URL déjà servie
+// (http://127.0.0.1:<port>/<jeton>) plutôt qu'un chemin Windows brut à
+// convertir ici — voir result.video_url / la valeur de retour directe de
+// rerender_scene/rerender_all.
 
 function goToStep(n) {
   document.querySelectorAll(".step").forEach((el) => {
@@ -160,6 +157,7 @@ document.getElementById("btn-go-step2").addEventListener("click", async () => {
 document.getElementById("btn-go-step3").addEventListener("click", () => goToStep(3));
 
 let lastVideoPath = null;
+let lastVideoUrl = null;
 
 // --- Étape 3 -> 4/5 : reprend le script en attente (édité à l'étape 2) et
 // termine la génération (diagrammes, voix, rendu, export) — voir
@@ -185,7 +183,8 @@ document.getElementById("btn-go-step4").addEventListener("click", async () => {
       editedScenes, voiceProfile, exportH5p, theme, mascotEnabled
     );
     lastVideoPath = result.video_path;
-    document.getElementById("result-video").src = toFileUri(result.video_path);
+    lastVideoUrl = result.video_url;
+    document.getElementById("result-video").src = result.video_url;
     goToStep(5);
   } catch (err) {
     // Sans ce rattrapage, une erreur (ex: SAPI qui ne répond plus, voir
@@ -227,7 +226,7 @@ document.getElementById("btn-export-en").addEventListener("click", async () => {
 // --- Étape 6 : exercices (mode simple) ---
 
 document.getElementById("btn-go-step6").addEventListener("click", async () => {
-  document.getElementById("exercise-video").src = lastVideoPath ? toFileUri(lastVideoPath) : "";
+  document.getElementById("exercise-video").src = lastVideoUrl || "";
   await refreshExerciseList();
   goToStep(6);
 });
