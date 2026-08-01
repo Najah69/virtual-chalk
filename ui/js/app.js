@@ -116,22 +116,60 @@ function resolveSource() {
   return { type: "text", value: document.getElementById("source-text").value };
 }
 
-document.getElementById("btn-go-step2").addEventListener("click", () => goToStep(2));
+// --- Étape 1 -> 2 : génère le script (seul appel LLM coûteux avant la
+// révision) puis affiche une zone de texte éditable par scène. Rien n'est
+// encore synthétisé/rendu à ce stade — voir Api.generate_script /
+// Pipeline.generate_project (docs/architecture.md).
+function renderScriptEditor(project) {
+  const container = document.getElementById("scenes-editor");
+  container.innerHTML = project.scenes
+    .map(
+      (scene, i) => `
+        <div class="scene-script-item" data-scene-id="${scene.scene_id}">
+          <h4>Scène ${i + 1}</h4>
+          <textarea rows="3" class="scene-voice-over">${scene.voice_over}</textarea>
+        </div>`
+    )
+    .join("");
+}
+
+document.getElementById("btn-go-step2").addEventListener("click", async () => {
+  const btn = document.getElementById("btn-go-step2");
+  btn.disabled = true;
+  const originalLabel = btn.textContent;
+  btn.textContent = "Génération du script...";
+  try {
+    const source = resolveSource();
+    const videoProfile = document.getElementById("video-profile-select").value;
+    const githubContentKind = document.getElementById("github-content-kind").value;
+    const project = await window.pywebview.api.generate_script(source, videoProfile, githubContentKind);
+    renderScriptEditor(project);
+    goToStep(2);
+  } finally {
+    btn.disabled = false;
+    btn.textContent = originalLabel;
+  }
+});
+
 document.getElementById("btn-go-step3").addEventListener("click", () => goToStep(3));
 
 let lastVideoPath = null;
 
+// --- Étape 3 -> 4/5 : reprend le script en attente (édité à l'étape 2) et
+// termine la génération (diagrammes, voix, rendu, export) — voir
+// Api.start_pipeline_from_script.
 document.getElementById("btn-go-step4").addEventListener("click", async () => {
   goToStep(4);
-  const source = resolveSource();
+  const editedScenes = Array.from(document.querySelectorAll("#scenes-editor .scene-script-item")).map((el) => ({
+    scene_id: el.dataset.sceneId,
+    voice_over: el.querySelector(".scene-voice-over").value,
+  }));
   const voiceProfile = document.getElementById("voice-select").value;
   const exportH5p = document.getElementById("export-h5p").checked;
   const theme = document.querySelector(".theme-card.selected")?.dataset.theme || "chalk_board";
-  const videoProfile = document.getElementById("video-profile-select").value;
-  const githubContentKind = document.getElementById("github-content-kind").value;
   const mascotEnabled = document.getElementById("mascot-enabled").checked;
-  const result = await window.pywebview.api.start_pipeline(
-    source, voiceProfile, exportH5p, theme, videoProfile, githubContentKind, mascotEnabled
+  const result = await window.pywebview.api.start_pipeline_from_script(
+    editedScenes, voiceProfile, exportH5p, theme, mascotEnabled
   );
   lastVideoPath = result.video_path;
   document.getElementById("result-video").src = toFileUri(result.video_path);

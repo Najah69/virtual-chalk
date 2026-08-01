@@ -596,8 +596,10 @@ consigne narrative change. `SYSTEM_PROMPT` (constante figée) est devenu
 `build_system_prompt(script_profile)` pour permettre cette
 paramétrisation ; `LLMProvider.generate_script()` accepte `script_profile`
 (voir `GenerationRequest` plus bas). Sélectionné dans l'assistant UX à
-l'étape 3 (`ui/index.html`, `#video-profile-select`), à côté du thème et
-de la voix.
+l'étape 1 (`ui/index.html`, `#video-profile-select`) — déplacé de
+l'étape 3 pour être connu avant l'appel LLM de génération du script (voir
+"Révision du script (étape 2)" plus bas, qui dépend de ce profil dès le
+premier appel à `Api.generate_script`).
 
 Vérifié en opposant `cours_magistral` et `fiche_revision` sur le même
 sujet : 8 scènes de 250-350 caractères avec accroche/conclusion contre 5
@@ -632,14 +634,68 @@ mélangeant obligatoires et optionnels sans regroupement logique.
 `GenerationRequest` (dataclass, `app/pipeline.py`) regroupe les
 paramètres d'une génération initiale (`source_text`, `voice_profile`,
 `theme`, `script_profile`, `github_content_kind`, `export_h5p`) en un seul
-objet passé à `Pipeline.run(request, on_progress=...)` — un seul endroit à
-étendre pour une future option plutôt que de rallonger la signature à
-chaque étape. Les étapes suivantes du pipeline (`generate_diagrams`,
-`synthesize_voices`, `render`, `export_h5p`, `rerender_scene`,
-`resynthesize_scene`) continuent de prendre le `Project` (ou une `Scene`)
-directement : elles n'ont pas besoin des paramètres d'entrée de la
-génération initiale, seulement de son résultat — regroupement volontaire
-limité à l'entrée du pipeline, pas une convention forcée partout.
+objet passé à `Pipeline.run(request, on_progress=...)` (ou, depuis la
+révision du script ci-dessous, à `generate_project()` puis
+`finish_generation()` séparément) — un seul endroit à étendre pour une
+future option plutôt que de rallonger la signature à chaque étape. Les
+étapes suivantes du pipeline (`generate_diagrams`, `synthesize_voices`,
+`render`, `export_h5p`, `rerender_scene`, `resynthesize_scene`)
+continuent de prendre le `Project` (ou une `Scene`) directement : elles
+n'ont pas besoin des paramètres d'entrée de la génération initiale,
+seulement de son résultat — regroupement volontaire limité à l'entrée du
+pipeline, pas une convention forcée partout.
+
+## Révision du script (étape 2 de l'assistant)
+
+Avant ce correctif, l'assistant enchaînait script → diagrammes → voix →
+rendu en un seul appel bloquant (`Pipeline.run`) : impossible de relire ou
+corriger le texte généré par le LLM avant de payer la synthèse vocale et
+le rendu, qui utilisent ce texte tel quel. `Pipeline.run()` a été scindé
+en deux :
+
+- `generate_project(request, on_progress)` : ne fait que l'appel LLM de
+  génération du script (`llm.generate_script`) et retourne le `Project`
+  brut (scènes + strokes, sans audio/vidéo).
+- `finish_generation(project, request, on_progress)` : reprend un
+  `Project` déjà produit et termine tout le reste (diagrammes, mascotte,
+  synthèse vocale, rendu, sauvegarde `.vchalk`, export H5P). `request`
+  n'y est relu que pour `voice_profile`/`theme`/`export_h5p`/
+  `mascot_enabled` — `source_text`/`script_profile`/`github_content_kind`
+  ont déjà été consommés par `generate_project` et ne sont pas repassés
+  (voir signature : `source_text=""` côté appelant, `Api.
+  start_pipeline_from_script`). `Pipeline.run()` reste disponible et
+  appelle simplement les deux à la suite, pour tout appelant qui n'a pas
+  besoin de l'étape de révision (aucun aujourd'hui, gardé pour ne pas
+  casser un usage direct de `Pipeline` hors `Api`).
+
+Côté `Api` (`app/api_bridge.py`), deux méthodes remplacent l'ancien
+`start_pipeline` unique :
+
+- `generate_script(source, script_profile, github_content_kind)` : appelle
+  `generate_project`, stocke le résultat dans `self._pending_script_project`
+  (état de session — un seul script "en attente" à la fois, écrasé par un
+  nouvel appel), et retourne `project.to_dict()` au JS pour affichage. Le
+  thème n'est pas encore connu à ce stade (choisi à l'étape 3 suivante) :
+  les strokes sont générés avec un thème provisoire (`"chalk_board"`) et
+  recolorés après coup si l'utilisateur choisit un autre thème (même
+  mécanisme que `set_theme` en édition NL, voir `_recolor_strokes_for_theme`).
+- `start_pipeline_from_script(edited_scenes, voice_profile_name, export_h5p,
+  theme, mascot_enabled)` : reprend `_pending_script_project` (erreur
+  explicite si absent — l'utilisateur a sauté l'étape 2, ou rafraîchi la
+  page), réapplique les éditions textuelles faites à l'étape 2
+  (`edited_scenes` : liste de `{scene_id, voice_over}`), recolore les
+  strokes si le thème a changé depuis l'étape 2, puis appelle
+  `finish_generation`. Vide `_pending_script_project` en sortie (script
+  consommé).
+
+Côté UI (`ui/index.html`/`ui/js/app.js`) : l'étape 2 ("Script généré")
+affiche une `<textarea>` par scène (`renderScriptEditor`), pré-remplie
+avec `voice_over`, éditable librement — ces valeurs sont relues au clic
+sur "Générer la vidéo →" (étape 3→4) et envoyées telles quelles à
+`start_pipeline_from_script`. Le bouton "Générer le script →" (étape 1→2)
+se désactive et affiche un libellé de progression pendant l'appel LLM
+(aucune barre de progression : un seul appel, généralement quelques
+secondes).
 
 ## Export H5P (finalité du projet, pas une extension)
 
@@ -685,7 +741,7 @@ clip re-rendu n'était jamais réintégré au montage, qui restait donc
 périmé après une édition ciblée.
 
 **Bug corrigé — lecteur vidéo intégré (étapes 5/6 de l'assistant)** :
-`Api.start_pipeline` renvoie un chemin Windows brut (ex:
+`Api.start_pipeline_from_script` renvoie un chemin Windows brut (ex:
 `C:\Users\...\video.mp4`), et `ui/js/app.js` l'assignait directement à
 `<video>.src` — ce n'est pas une URL valide, le navigateur échoue
 silencieusement à charger le média (aucune erreur visible, juste "Impossible
@@ -912,7 +968,7 @@ message d'erreur. Corrigé en ajoutant `Api._current_project_path`
 `insert_image`) — sans quoi les éditions d'un projet ouvert sous un nom
 personnalisé auraient été silencieusement écrites dans un tout nouveau
 `project{EXT}` à côté plutôt que dans le fichier réellement ouvert.
-`start_pipeline` ne renseigne toujours pas ce champ (aucun besoin, son
+`start_pipeline_from_script` ne renseigne toujours pas ce champ (aucun besoin, son
 projet est toujours sauvegardé à l'emplacement canonique), donc le repli
 sur le nom deviné reste utilisé — et reste correct — dans ce cas précis.
 
@@ -1093,10 +1149,13 @@ appel réseau/LLM/TTS ni de vrai rendu ffmpeg/capture d'écran :
   verrouille le bug historique corrigé pendant cette session (scènes
   inchangées silencieusement absentes du montage final). `render_scene`
   y est entièrement simulé (pas de vraie capture/encodage).
-- `test_api_bridge_voice_fallback.py` — `Api.start_pipeline` retombe sur
-  `_DEFAULT_VOICE_PROFILE` si `voice_profile_name` ne correspond à aucun
-  profil connu, plutôt que de laisser `None` se propager. `Pipeline.run`
-  y est entièrement simulé.
+- `test_api_bridge_voice_fallback.py` — `Api.start_pipeline_from_script`
+  retombe sur `_DEFAULT_VOICE_PROFILE` si `voice_profile_name` ne
+  correspond à aucun profil connu, plutôt que de laisser `None` se
+  propager ; vérifie aussi qu'il refuse de s'exécuter sans script en
+  attente (`_pending_script_project`) et qu'il réapplique les éditions
+  textuelles faites à l'étape 2. `Pipeline.finish_generation` y est
+  entièrement simulé.
 
 `tests/conftest.py` fournit `FakeLLMProvider` (sous-classe de
 `LLMProvider` qui rejoue une liste de réponses brutes préparées à

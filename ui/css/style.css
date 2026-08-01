@@ -79,6 +79,32 @@ button.secondary {
   gap: 16px;
 }
 
+#scenes-editor {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin: 16px 0;
+}
+
+.scene-script-item {
+  border: 1px solid #c9c6bd;
+  border-radius: 8px;
+  padding: 12px 14px;
+}
+
+.scene-script-item h4 {
+  margin: 0 0 8px 0;
+  font-size: 13px;
+  color: #666;
+  font-weight: 600;
+}
+
+.scene-script-item textarea {
+  width: 100%;
+  resize: vertical;
+  font: inherit;
+}
+
 .theme-card {
   border: 2px solid transparent;
   border-radius: 10px;

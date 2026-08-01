@@ -10,7 +10,7 @@ import webview
 
 import uuid
 
-from app.edit.nl_commands import apply_nl_edit_command
+from app.edit.nl_commands import _recolor_strokes_for_theme, apply_nl_edit_command
 from app.h5p.packager import build_h5p
 from app.i18n.translate import translate_project
 from app.ingestion.text_normalizer import normalize_source
@@ -54,6 +54,12 @@ class Api:
         self._current_project_path: Path | None = None
         self._current_video_path: Path | None = None
         self._current_voice_profile: VoiceProfile | None = None
+        # Script généré à l'étape "2. Script" (Api.generate_script) en
+        # attente de révision/édition par l'utilisateur avant de lancer la
+        # suite (diagrammes, voix, rendu — coûteux) — voir
+        # start_pipeline_from_script. None tant que l'étape 2 n'a pas
+        # encore produit de script pour cette session.
+        self._pending_script_project = None
 
     def pick_file(self) -> str | None:
         result = webview.windows[0].create_file_dialog(
@@ -136,41 +142,93 @@ class Api:
         return Pipeline(llm=llm, tts=tts, output_dir=Path(self.settings.default_output_dir),
                          diagram_api_key=get_api_key("gemini"))
 
-    def start_pipeline(self, source: dict[str, Any], voice_profile_name: str, export_h5p: bool,
-                        theme: str = "chalk_board", script_profile: str = DEFAULT_VIDEO_PROFILE,
-                        github_content_kind: str | None = None, mascot_enabled: bool = False) -> dict[str, Any]:
-        text = normalize_source(source)
+    @staticmethod
+    def _resolve_voice_profile(voice_profile_name: str) -> VoiceProfile:
+        """Repli explicite sur un profil valide si `voice_profile_name` ne
+        correspond à aucun profil connu (liste de voix système changée
+        entre-temps, valeur périmée envoyée par l'UI...) plutôt que de
+        laisser None se propager jusqu'à TTSProvider.synthesize — les
+        providers actuels tolèrent déjà None en pratique, mais ce repli
+        évite une dégradation SILENCIEUSE (l'utilisateur a choisi une voix
+        précise, il doit obtenir un profil réel, pas juste "ce qui ne
+        plante pas")."""
         profile = next((p for p in list_voice_profiles() if p.name == voice_profile_name), None)
         if profile is None:
-            # voice_profile_name ne correspond a aucun profil connu (liste
-            # de voix systeme changee entre-temps, valeur perimee envoyee
-            # par l'UI...) : repli explicite sur un profil valide plutot
-            # que de laisser None se propager jusqu'a TTSProvider.synthesize
-            # — les providers actuels tolerent deja None en pratique, mais
-            # ce repli evite une degradation SILENCIEUSE (l'utilisateur a
-            # choisi une voix precise, il doit obtenir un profil reel, pas
-            # juste "ce qui ne plante pas").
             logger.warning(
                 "Profil de voix %r introuvable, repli sur le profil par défaut", voice_profile_name,
             )
-            profile = _DEFAULT_VOICE_PROFILE
-        pipeline = self._build_pipeline(profile)
+            return _DEFAULT_VOICE_PROFILE
+        return profile
+
+    def generate_script(self, source: dict[str, Any], script_profile: str = DEFAULT_VIDEO_PROFILE,
+                         github_content_kind: str | None = None) -> dict[str, Any]:
+        """Étape "2. Script" de l'assistant : ne fait QUE l'appel LLM de
+        génération du script (Pipeline.generate_project), sans diagrammes/
+        voix/rendu — pour laisser l'utilisateur relire/éditer le texte
+        (voix off de chaque scène) avant de lancer la suite, coûteuse.
+        Le thème n'est pas encore choisi à ce stade (étape 3) : les
+        strokes sont générés avec un thème provisoire ("chalk_board") et
+        recolorés si besoin dans start_pipeline_from_script, une fois le
+        vrai thème connu (même mécanisme que set_theme en édition NL, voir
+        _recolor_strokes_for_theme)."""
+        text = normalize_source(source)
+        pipeline = self._build_pipeline(_DEFAULT_VOICE_PROFILE)
         content_kind = github_content_kind if source.get("type") == "github" else None
+        request = GenerationRequest(
+            source_text=text, voice_profile=_DEFAULT_VOICE_PROFILE, theme="chalk_board",
+            script_profile=script_profile, github_content_kind=content_kind,
+        )
+        project = pipeline.generate_project(request)
+        self._pending_script_project = project
+        return project.to_dict()
+
+    def start_pipeline_from_script(self, edited_scenes: list[dict[str, Any]], voice_profile_name: str,
+                                    export_h5p: bool, theme: str = "chalk_board",
+                                    mascot_enabled: bool = False) -> dict[str, Any]:
+        """Termine la génération à partir du script produit par
+        generate_script, en réappliquant les éditions textuelles faites à
+        l'étape 2 (voix off par scène — `edited_scenes` : liste de
+        {scene_id, voice_over})."""
+        if not self._pending_script_project:
+            raise RuntimeError("Aucun script en attente — repassez par l'étape 1")
+        project = self._pending_script_project
+
+        for scene_data in edited_scenes:
+            scene = project.find_scene(scene_data["scene_id"])
+            if scene is not None:
+                scene.voice_over = scene_data["voice_over"]
+
+        if theme != project.theme:
+            project.theme = theme
+            _recolor_strokes_for_theme(project, theme)
+
+        profile = self._resolve_voice_profile(voice_profile_name)
+        pipeline = self._build_pipeline(profile)
 
         def on_progress(step: str, fraction: float) -> None:
-            webview.windows[0].evaluate_js(
-                f"window.onPipelineProgress({step!r}, {fraction})"
-            )
+            # Best-effort : un pépin transitoire du pont JS (observé en
+            # pratique : "window.onPipelineProgress is not a function" sous
+            # WebView2 pendant un rendu chargé en appels evaluate_js
+            # concurrents sur la fenêtre de rendu cachée) ne doit jamais
+            # faire échouer toute la génération (déjà payée en TTS/rendu) —
+            # seule la barre de progression en pâtit, pas le résultat final.
+            try:
+                webview.windows[0].evaluate_js(
+                    f"window.onPipelineProgress({step!r}, {fraction})"
+                )
+            except Exception:
+                logger.warning("Échec de la mise à jour de la barre de progression (%s, %s)", step, fraction)
 
         request = GenerationRequest(
-            source_text=text, voice_profile=profile, theme=theme, script_profile=script_profile,
-            github_content_kind=content_kind, export_h5p=export_h5p, mascot_enabled=mascot_enabled,
+            source_text="", voice_profile=profile, theme=theme,
+            export_h5p=export_h5p, mascot_enabled=mascot_enabled,
         )
-        result = pipeline.run(request, on_progress=on_progress)
+        result = pipeline.finish_generation(project, request, on_progress=on_progress)
         self._current_project = result.project
         self._current_project_dir = result.project_dir
         self._current_video_path = result.video_path
         self._current_voice_profile = profile
+        self._pending_script_project = None
         return {
             "video_path": str(result.video_path),
             "h5p_path": str(result.h5p_path) if result.h5p_path else None,
@@ -244,8 +302,8 @@ class Api:
         """Où sauvegarder le projet courant après une édition — le fichier
         exact qui a été ouvert (_current_project_path, voir load_project)
         s'il est connu, sinon l'emplacement canonique "project{EXT}" utilisé
-        par une génération fraîche (start_pipeline ne renseigne jamais
-        _current_project_path, voir get_current_project_path). Sans ça, un
+        par une génération fraîche (start_pipeline_from_script ne renseigne
+        jamais _current_project_path, voir get_current_project_path). Sans ça, un
         projet ouvert sous un autre nom que "project{EXT}" verrait ses
         éditions sauvegardées dans un tout autre fichier que celui ouvert."""
         if self._current_project_path:
@@ -396,9 +454,9 @@ class Api:
         fichier ouvert ne s'appelle pas "project{EXT}" (voir
         Api.open_project_file) — sinon reconstruit le chemin canonique
         "{dossier}/project{EXT}", correct pour un projet fraîchement
-        généré par start_pipeline (toujours sauvegardé à cet emplacement,
-        voir Pipeline.run) mais qui n'a jamais mis à jour
-        _current_project_path."""
+        généré par start_pipeline_from_script (toujours sauvegardé à cet
+        emplacement, voir Pipeline.finish_generation) mais qui n'a jamais
+        mis à jour _current_project_path."""
         if self._current_project_path:
             return str(self._current_project_path)
         if not self._current_project_dir:

@@ -34,6 +34,10 @@
           <option value="changelog">Nouveautés / changelog</option>
         </select>
       </label>
+      <label style="display:block; margin-top:12px">
+        Profil de vidéo
+        <select id="video-profile-select"></select>
+      </label>
       <div style="margin-top:24px">
         <button class="primary" id="btn-go-step2">Générer le script →</button>
       </div>
@@ -41,6 +45,7 @@
 
     <section class="step-panel" data-step="2">
       <h2>Script généré</h2>
+      <p>Relisez et modifiez le texte de chaque scène avant de lancer la génération de la vidéo (voix, images, rendu).</p>
       <div id="scenes-editor"></div>
       <button class="primary" id="btn-go-step3">Continuer →</button>
     </section>
@@ -51,10 +56,6 @@
       <label style="display:block; margin-top:20px">
         Voix
         <select id="voice-select"></select>
-      </label>
-      <label style="display:block; margin-top:12px">
-        Profil de vidéo
-        <select id="video-profile-select"></select>
       </label>
       <label style="display:block; margin-top:12px">
         <input type="checkbox" id="export-h5p" checked />

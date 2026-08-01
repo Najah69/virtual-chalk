@@ -168,6 +168,17 @@ class Pipeline:
 
     def run(self, request: GenerationRequest, on_progress: ProgressCallback = None) -> PipelineResult:
         project = self.generate_project(request, on_progress)
+        return self.finish_generation(project, request, on_progress)
+
+    def finish_generation(self, project: Project, request: GenerationRequest,
+                           on_progress: ProgressCallback = None) -> PipelineResult:
+        """Termine une génération à partir d'un script déjà produit
+        (diagrammes, mascotte, voix, rendu, export) — scindé de `run` pour
+        permettre de revoir/éditer le script (voir Api.generate_script,
+        étape "2. Script" de l'assistant) entre la génération du texte et
+        le reste, coûteux (TTS + rendu), sans avoir à tout régénérer.
+        `request.source_text`/`script_profile`/`github_content_kind` ne
+        sont pas relus ici (déjà consommés par generate_project)."""
         self.generate_diagrams(project, on_progress)
         if request.mascot_enabled:
             # Après generate_diagrams (et non avant) : un diagramme retiré
