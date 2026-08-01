@@ -654,11 +654,16 @@ interactive utilisable sans configuration manuelle.
 
 Un dossier par projet, un sous-dossier par langue à l'intérieur —
 `{réglages.default_output_dir}/{slug}/{lang}/` (`fr` par défaut, `en` pour
-une traduction) contenant `video.mp4`, `video.h5p`, `project.vchalk` et
+une traduction) contenant `{slug}.mp4`, `{slug}.h5p`, `project.vchalk` et
 un sous-dossier `scenes/{scene_id}.mp4` (cache par scène, voir plus bas).
-`Pipeline.project_dir(slug, lang)` calcule/crée ce chemin ; toutes les
-autres méthodes (`render`, `export_h5p`, `rerender_scene`) reçoivent ce
-répertoire en paramètre plutôt que de le recalculer chacune de leur côté.
+Le nom du fichier vidéo/h5p lui-même reprend le slug du projet (pas
+"video.mp4"/"video.h5p" génériques comme avant — un fichier isolé de son
+dossier, partagé ou déplacé, doit rester identifiable). `Api.load_project`
+cherche ce nom, et se replie sur l'ancien nom générique "video.mp4" pour
+les projets générés avant ce changement. `Pipeline.project_dir(slug, lang)`
+calcule/crée ce chemin ; toutes les autres méthodes (`render`,
+`export_h5p`, `rerender_scene`) reçoivent ce répertoire en paramètre
+plutôt que de le recalculer chacune de leur côté.
 Une traduction (`Api.export_translated`) écrit dans un sous-dossier de
 langue **frère** du dossier de la langue source (même dossier de projet,
 `.../{slug}/en/`) plutôt que dans un nouveau dossier dérivé du titre
@@ -678,6 +683,22 @@ cache ou fraîchement rendues), donc le montage final reste complet.
 la vidéo finale complète à partir de ce cache — avant ce correctif, le
 clip re-rendu n'était jamais réintégré au montage, qui restait donc
 périmé après une édition ciblée.
+
+**Bug corrigé — lecteur vidéo intégré (étapes 5/6 de l'assistant)** :
+`Api.start_pipeline` renvoie un chemin Windows brut (ex:
+`C:\Users\...\video.mp4`), et `ui/js/app.js` l'assignait directement à
+`<video>.src` — ce n'est pas une URL valide, le navigateur échoue
+silencieusement à charger le média (aucune erreur visible, juste "Impossible
+de lire les fichiers multimédias" côté accessibilité). `ui/index.html` est
+servie via le mini serveur HTTP local de pywebview
+(`http://localhost:<port>/...`, voir plus bas "Éditeur visuel WYSIWYG"
+pour le détail de ce mécanisme), mais la vidéo générée vit hors de sa
+racine servie (dossier de sortie utilisateur) — impossible de la
+référencer par une URL relative à ce serveur. Corrigé via
+`toFileUri()` (`ui/js/app.js`), qui convertit en URI `file://` avant
+assignation : un `<video>`/`<img>` peut afficher un fichier `file://`
+même depuis une page `http://`, contrairement à un canvas (qui, lui, se
+retrouve "tainted" en lecture de pixels — voir plus bas).
 
 ## Édition post-génération
 
@@ -793,6 +814,21 @@ sur `rerender_scene` pour chaque scène : `render_all` (basé sur
 `content_hash`) décide lui-même quelles scènes ré-encoder, réutilisant le
 cache pour les autres — un `rerender_scene` par scène forcerait un
 ré-encodage inconditionnel de tout le projet à chaque clic.
+
+**Retour utilisateur : "le bouton Re-render ne fait rien"** — en réalité
+il fonctionnait (confirmé en cliquant le vrai bouton via automatisation :
+le re-rendu se déclenchait bien, produisait le bon fichier), mais rien ne
+le rendait visible : un re-rendu prend facilement 10s à plusieurs minutes
+(ré-encodage ffmpeg réel), et le seul retour était un petit texte gris
+discret pendant que les boutons restaient cliquables comme s'ils ne
+faisaient rien — combiné au lecteur vidéo cassé (voir plus haut),
+l'utilisateur n'avait aucun moyen de constater qu'un re-rendu avait
+réellement eu lieu. `editor.js::setRerenderBusy`/`showRerenderResult`
+désactivent maintenant les deux boutons pendant l'opération (statut
+visuellement marqué, couleur + gras) et affichent le résultat dans un
+`<video>` intégré au panneau (`#rerender-preview`, même conversion
+`toFileUri` que `ui/js/app.js`) — plus besoin de quitter l'éditeur pour
+constater le résultat.
 
 **Propriétés de scène** (voix off) : `prop-duration` est maintenant un
 affichage en lecture seule (la durée est dérivée de l'audio synthétisé,

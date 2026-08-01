@@ -150,7 +150,11 @@ class Pipeline:
 
     def render(self, project: Project, out_dir: Path, on_progress: ProgressCallback = None) -> Path:
         scene_videos = render_all(project, out_dir / "scenes", on_progress=on_progress)
-        final_path = out_dir / "video.mp4"
+        # Nommé d'après le slug du projet (pas "video.mp4" générique) : le
+        # dossier de sortie porte déjà ce nom (voir project_dir), mais le
+        # fichier lui-même doit rester identifiable une fois déplacé/
+        # partagé isolément, hors de son dossier.
+        final_path = out_dir / f"{project.slug}.mp4"
         concat_scenes(scene_videos, final_path)
         return final_path
 
@@ -158,7 +162,7 @@ class Pipeline:
         bookmarks = generate_bookmarks(project.scenes)
         interactions = [build_interaction(ex) for ex in project.exercises]
         exercise_types = {ex.exercise_type for ex in project.exercises}
-        h5p_path = out_dir / "video.h5p"
+        h5p_path = out_dir / f"{project.slug}.h5p"
         build_h5p(video_path, bookmarks, h5p_path, interactions=interactions, exercise_types=exercise_types)
         return h5p_path
 

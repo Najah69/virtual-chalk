@@ -212,7 +212,7 @@ class Api:
         bookmarks = generate_bookmarks(project.scenes)
         interactions = [build_interaction(ex) for ex in project.exercises]
         exercise_types = {ex.exercise_type for ex in project.exercises}
-        h5p_path = self._current_project_dir / "video.h5p"
+        h5p_path = self._current_project_dir / f"{project.slug}.h5p"
         build_h5p(self._current_video_path, bookmarks, h5p_path,
                   interactions=interactions, exercise_types=exercise_types)
         return str(h5p_path)
@@ -227,8 +227,17 @@ class Api:
         self._current_project = project
         self._current_project_path = Path(path)
         self._current_project_dir = Path(path).parent
-        existing_video = self._current_project_dir / "video.mp4"
-        self._current_video_path = existing_video if existing_video.exists() else None
+        # Nommée d'après le slug depuis cette tâche (voir Pipeline.render) ;
+        # repli sur l'ancien nom générique "video.mp4" pour les projets
+        # générés avant ce changement.
+        named_video = self._current_project_dir / f"{project.slug}.mp4"
+        legacy_video = self._current_project_dir / "video.mp4"
+        if named_video.exists():
+            self._current_video_path = named_video
+        elif legacy_video.exists():
+            self._current_video_path = legacy_video
+        else:
+            self._current_video_path = None
         return project.to_dict()
 
     def _current_project_save_path(self) -> Path:

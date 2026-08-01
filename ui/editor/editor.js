@@ -8,6 +8,14 @@
 // propriétés contextuel, commande NL, journal) et appelle EditorCanvas
 // pour charger/relire l'état visuel de la scène sélectionnée.
 
+// Même conversion que ui/js/app.js::toFileUri (page séparée, contexte JS
+// séparé — voir ce fichier pour le détail : un <video>.src ne peut pas
+// être un chemin Windows brut, ni une URL relative au serveur local de
+// l'éditeur puisque la vidéo vit hors de sa racine servie).
+function toFileUri(windowsPath) {
+  return "file:///" + encodeURI(windowsPath.replace(/\\/g, "/"));
+}
+
 let currentProject = null;
 let selectedSceneId = null;
 // Journal des commandes d'édition NL de la session courante (pas persisté
@@ -223,28 +231,64 @@ async function saveCurrentSceneEdits() {
   changedSinceRerender = false;
 }
 
+// Un re-rendu prend facilement 10s à plusieurs minutes (ré-encodage
+// ffmpeg réel, voir Pipeline.render) : avant ce correctif, le seul
+// retour visible était un petit texte gris discret pendant que les deux
+// boutons restaient cliquables comme s'ils ne faisaient rien — un
+// utilisateur n'avait aucun moyen de savoir qu'un re-rendu était
+// réellement en cours, ni de voir le résultat sans quitter l'éditeur
+// (lecteur vidéo de l'assistant lui-même cassé jusqu'à ce correctif,
+// voir ui/js/app.js::toFileUri). Les deux boutons sont maintenant
+// désactivés pendant l'opération, le statut est visuellement marqué
+// (couleur + gras), et le résultat s'affiche directement dans un lecteur
+// vidéo intégré au panneau, sans avoir à ouvrir le dossier.
+function setRerenderBusy(busy, message) {
+  const status = document.getElementById("rerender-status");
+  const sceneBtn = document.getElementById("btn-rerender-scene");
+  const allBtn = document.getElementById("btn-rerender-all");
+  sceneBtn.disabled = busy;
+  allBtn.disabled = busy;
+  status.textContent = message;
+  status.className = `rerender-status ${busy ? "busy" : ""}`;
+}
+
+function showRerenderResult(success, message, videoPath) {
+  const status = document.getElementById("rerender-status");
+  status.textContent = message;
+  status.className = `rerender-status ${success ? "ok" : "error"}`;
+  if (success && videoPath) {
+    const preview = document.getElementById("rerender-preview");
+    preview.src = toFileUri(videoPath);
+    preview.style.display = "block";
+  }
+}
+
 document.getElementById("btn-rerender-scene").addEventListener("click", async () => {
   if (!selectedSceneId) return;
-  const status = document.getElementById("image-insert-status");
-  status.textContent = "Re-rendu en cours...";
+  setRerenderBusy(true, "Re-rendu de la scène en cours (peut prendre jusqu'à quelques minutes)...");
   try {
     await saveCurrentSceneEdits();
-    await window.pywebview.api.rerender_scene(selectedSceneId);
-    status.textContent = "Scène re-rendue.";
+    const videoPath = await window.pywebview.api.rerender_scene(selectedSceneId);
+    showRerenderResult(true, "Scène re-rendue — vidéo à jour ci-dessous.", videoPath);
   } catch (err) {
-    status.textContent = `Erreur : ${err}`;
+    showRerenderResult(false, `Erreur : ${err}`, null);
+  } finally {
+    document.getElementById("btn-rerender-scene").disabled = false;
+    document.getElementById("btn-rerender-all").disabled = false;
   }
 });
 
 document.getElementById("btn-rerender-all").addEventListener("click", async () => {
-  const status = document.getElementById("image-insert-status");
-  status.textContent = "Re-rendu en cours (seules les scènes modifiées sont ré-encodées)...";
+  setRerenderBusy(true, "Re-rendu en cours (seules les scènes modifiées sont ré-encodées)...");
   try {
     if (selectedSceneId) await saveCurrentSceneEdits();
-    await window.pywebview.api.rerender_all();
-    status.textContent = "Montage final à jour.";
+    const videoPath = await window.pywebview.api.rerender_all();
+    showRerenderResult(true, "Montage final à jour — vidéo ci-dessous.", videoPath);
   } catch (err) {
-    status.textContent = `Erreur : ${err}`;
+    showRerenderResult(false, `Erreur : ${err}`, null);
+  } finally {
+    document.getElementById("btn-rerender-scene").disabled = false;
+    document.getElementById("btn-rerender-all").disabled = false;
   }
 });
 

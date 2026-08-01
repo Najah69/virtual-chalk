@@ -57,7 +57,9 @@ def _make_api(monkeypatch, project, tmp_path):
     return api
 
 
-def test_load_project_restores_video_path_when_it_exists(monkeypatch, tmp_path):
+def test_load_project_restores_video_path_from_legacy_generic_name(monkeypatch, tmp_path):
+    """Repli sur l'ancien nom générique "video.mp4" pour les projets
+    générés avant le passage au nommage par slug (voir Pipeline.render)."""
     project = Project(title="t", summary="s", sections=[], scenes=[])
     api = _make_api(monkeypatch, project, tmp_path)
 
@@ -70,6 +72,19 @@ def test_load_project_restores_video_path_when_it_exists(monkeypatch, tmp_path):
     assert api._current_project is project
     assert api._current_project_dir == tmp_path
     assert api._current_video_path == tmp_path / "video.mp4"
+
+
+def test_load_project_prefers_slug_named_video_over_legacy(monkeypatch, tmp_path):
+    project = Project(title="Mon Super Projet", summary="s", sections=[], scenes=[])
+    api = _make_api(monkeypatch, project, tmp_path)
+
+    project_file = tmp_path / f"project{PROJECT_FILE_EXTENSION}"
+    (tmp_path / "video.mp4").write_bytes(b"legacy")
+    (tmp_path / f"{project.slug}.mp4").write_bytes(b"named")
+
+    api.load_project(str(project_file))
+
+    assert api._current_video_path == tmp_path / f"{project.slug}.mp4"
 
 
 def test_load_project_leaves_video_path_none_when_video_missing(monkeypatch, tmp_path):

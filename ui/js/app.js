@@ -1,6 +1,25 @@
 // Logique de l'assistant en 5 étapes. Appelle app.api_bridge.Api via
 // window.pywebview.api (injecté par pywebview au chargement de la fenêtre).
 
+// ui/index.html est chargée via le mini serveur HTTP local de pywebview
+// (http://localhost:<port>/..., voir Api.open_editor pour le détail de ce
+// mécanisme), mais la vidéo générée vit dans un dossier de sortie
+// quelconque (Documents/Virtual-Chalk Videos/...), hors de la racine
+// servie (base_dir()) — impossible de la référencer par une URL relative
+// à ce serveur. Assigner directement le chemin Windows brut renvoyé par
+// Api.start_pipeline (ex: "C:\Users\...\video.mp4") à <video>.src ne
+// fonctionne PAS : ce n'est pas une URL valide, le navigateur échoue
+// silencieusement à charger le média (constaté : aucune erreur visible,
+// juste "Impossible de lire les fichiers multimédias" côté accessibilité).
+// Convertir en URI file:// résout ça — un <video>/<img> peut afficher un
+// fichier file:// même depuis une page http://, contrairement à un canvas
+// (qui, lui, se retrouve "tainted" en lecture de pixels, voir
+// docs/architecture.md) : ici on ne fait qu'afficher, jamais lire les
+// données par script.
+function toFileUri(windowsPath) {
+  return "file:///" + encodeURI(windowsPath.replace(/\\/g, "/"));
+}
+
 function goToStep(n) {
   document.querySelectorAll(".step").forEach((el) => {
     el.classList.toggle("active", el.dataset.step === String(n));
@@ -115,7 +134,7 @@ document.getElementById("btn-go-step4").addEventListener("click", async () => {
     source, voiceProfile, exportH5p, theme, videoProfile, githubContentKind, mascotEnabled
   );
   lastVideoPath = result.video_path;
-  document.getElementById("result-video").src = result.video_path;
+  document.getElementById("result-video").src = toFileUri(result.video_path);
   goToStep(5);
 });
 
@@ -145,7 +164,7 @@ document.getElementById("btn-export-en").addEventListener("click", async () => {
 // --- Étape 6 : exercices (mode simple) ---
 
 document.getElementById("btn-go-step6").addEventListener("click", async () => {
-  document.getElementById("exercise-video").src = lastVideoPath || "";
+  document.getElementById("exercise-video").src = lastVideoPath ? toFileUri(lastVideoPath) : "";
   await refreshExerciseList();
   goToStep(6);
 });
