@@ -31,8 +31,19 @@ function loadBinarySync(url) {
   // thread ici le temps de charger un fichier local (quelques ms) est
   // plus simple et plus fiable qu'un chargement async à coordonner avec
   // Python avant le premier appel à loadScene.
+  //
+  // Chemin ABSOLU depuis la racine du serveur local (pas relatif à
+  // "fonts/Caveat.ttf") : ce script est aussi inclus par
+  // ui/editor/editor.html (aperçu WYSIWYG de l'éditeur, voir
+  // Api.open_editor) — une URL relative se résout par rapport à la page
+  // qui l'inclut, pas au fichier .js lui-même, donc "fonts/Caveat.ttf"
+  // pointerait vers ui/editor/fonts/... (inexistant) une fois chargé
+  // depuis l'éditeur au lieu de web_template/. Le serveur HTTP local de
+  // pywebview sert toujours depuis la racine du projet (base_dir(), voir
+  // app/paths.py) quelle que soit la fenêtre, donc ce chemin absolu
+  // fonctionne identiquement dans les deux pages.
   try {
-    _handwritingFont = opentype.parse(loadBinarySync("fonts/Caveat.ttf"));
+    _handwritingFont = opentype.parse(loadBinarySync("/app/render/web_template/fonts/Caveat.ttf"));
   } catch (e) {
     console.error("Echec du chargement de la police manuscrite:", e);
   }

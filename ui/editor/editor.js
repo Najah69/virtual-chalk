@@ -1,5 +1,12 @@
 // Écran d'édition post-génération : re-render ciblé par scène (partial_render.py),
-// pas de rappel LLM/TTS sauf si le texte de la scène a réellement changé.
+// pas de rappel LLM/TTS sauf si le texte de la scène a réellement changé
+// (voir update_scene_voice_over) ou pour traduire une commande NL.
+//
+// L'aperçu WYSIWYG (sélection, glisser, redimensionner, ajout, édition de
+// texte inline) est géré par editor_canvas.js (window.EditorCanvas) —
+// ce fichier orchestre le reste de l'écran (liste des scènes, panneau de
+// propriétés contextuel, commande NL, journal) et appelle EditorCanvas
+// pour charger/relire l'état visuel de la scène sélectionnée.
 
 let currentProject = null;
 let selectedSceneId = null;
@@ -72,59 +79,176 @@ function renderSceneList() {
   });
 }
 
-function selectScene(sceneId) {
-  selectedSceneId = sceneId;
-  const scene = currentProject.scenes.find((s) => s.scene_id === sceneId);
-  document.getElementById("prop-text").value = scene.voice_over;
-  document.getElementById("prop-duration").value = scene.duration_sec;
-  renderSceneList();
-  // TODO: dessiner l'aperçu SVG/canvas live de la scène sélectionnée
+function findScene(sceneId) {
+  return currentProject.scenes.find((s) => s.scene_id === sceneId);
 }
 
-document.getElementById("btn-rerender-scene").addEventListener("click", async () => {
+function selectScene(sceneId) {
+  selectedSceneId = sceneId;
+  const scene = findScene(sceneId);
+  document.getElementById("prop-voice-over").value = scene.voice_over;
+  document.getElementById("prop-duration-display").textContent = scene.duration_sec.toFixed(1);
+  document.getElementById("voice-over-status").textContent = "";
+  renderSceneList();
+  window.EditorCanvas.loadScene(scene, currentProject.theme);
+  showElementProperties(null);
+}
+
+// --- Panneau de propriétés contextuel (élément sélectionné sur le canvas) --
+
+function showElementProperties(stroke) {
+  const section = document.getElementById("element-properties-section");
+  if (!stroke) {
+    section.style.display = "none";
+    return;
+  }
+  section.style.display = "block";
+
+  const textRow = document.getElementById("element-text-row");
+  const colorRow = document.getElementById("element-color-row");
+  const kindLabel = document.getElementById("element-kind-label");
+  const textArea = document.getElementById("prop-element-text");
+  const colorInput = document.getElementById("prop-element-color");
+
+  const kindNames = { text: "texte", icon: "icône", animation: "animation", image: "image", shape: "forme", diagram: "diagramme" };
+  kindLabel.textContent = `Type : ${kindNames[stroke.kind] || stroke.kind}`;
+
+  // Le texte n'est librement éditable que pour un vrai stroke "text" —
+  // pour une icône/animation, stroke.text est le NOM technique (ex:
+  // "sun", "falling_rain"), pas une prose éditable au hasard.
+  if (stroke.kind === "text") {
+    textRow.style.display = "block";
+    textArea.value = stroke.text;
+  } else {
+    textRow.style.display = "none";
+  }
+
+  // La couleur n'a pas de sens pour une image.
+  if (stroke.kind === "image") {
+    colorRow.style.display = "none";
+  } else {
+    colorRow.style.display = "block";
+    colorInput.value = stroke.color || "#ffffff";
+  }
+}
+
+document.getElementById("prop-element-text").addEventListener("change", () => {
+  const stroke = window.EditorCanvas.getSelectedStroke();
+  if (!stroke) return;
+  stroke.text = document.getElementById("prop-element-text").value;
+  window.EditorCanvas.onStrokeMutated(stroke);
+});
+
+document.getElementById("prop-element-color").addEventListener("input", () => {
+  const stroke = window.EditorCanvas.getSelectedStroke();
+  if (!stroke) return;
+  stroke.color = document.getElementById("prop-element-color").value;
+  window.EditorCanvas.onStrokeMutated(stroke);
+});
+
+document.getElementById("btn-delete-element").addEventListener("click", () => {
+  window.EditorCanvas.deleteSelected();
+});
+
+document.getElementById("btn-deselect-element").addEventListener("click", () => {
+  window.EditorCanvas.selectStroke(null);
+});
+
+window.EditorCanvas.setOnSelectionChange((stroke) => showElementProperties(stroke));
+
+// changedSinceRerender : vrai dès qu'un glisser/redimensionnement/ajout/
+// suppression/édition inline a modifié la scène affichée — sert juste à
+// personnaliser le message des boutons "Re-render", la sauvegarde
+// elle-même se fait systématiquement (voir saveCurrentSceneEdits) pour
+// ne jamais perdre silencieusement une modification visuelle.
+let changedSinceRerender = false;
+window.EditorCanvas.setOnSceneChanged(() => { changedSinceRerender = true; });
+
+// --- Propriétés de scène (voix off) ----------------------------------------
+
+document.getElementById("btn-save-voice-over").addEventListener("click", async () => {
   if (!selectedSceneId) return;
-  await window.pywebview.api.rerender_scene(selectedSceneId);
-});
-
-// Image en attente d'insertion (choisie mais pas encore ajoutée à une
-// scène) : {name, data_uri}, déjà lue et encodée en base64 côté Python
-// (voir Api.pick_and_encode_image) — jamais un chemin de fichier, cf.
-// Stroke.image_data pour la raison (canvas "tainted" en file://).
-let pickedImage = null;
-
-document.getElementById("btn-pick-image").addEventListener("click", async () => {
-  const status = document.getElementById("image-insert-status");
-  status.textContent = "";
-  const picked = await window.pywebview.api.pick_and_encode_image();
-  if (!picked) return;
-  pickedImage = picked;
-  document.getElementById("image-picked-name").textContent = picked.name;
-  document.getElementById("btn-insert-image").disabled = false;
-});
-
-document.getElementById("btn-insert-image").addEventListener("click", async () => {
-  const status = document.getElementById("image-insert-status");
-  if (!selectedSceneId || !pickedImage) return;
-
-  const xPct = parseFloat(document.getElementById("image-x-pct").value) || 0;
-  const yPct = parseFloat(document.getElementById("image-y-pct").value) || 0;
-  const widthPct = parseFloat(document.getElementById("image-width-pct").value) || 25;
-  const heightPct = parseFloat(document.getElementById("image-height-pct").value) || 25;
-
-  status.textContent = "Insertion et re-rendu en cours...";
+  const status = document.getElementById("voice-over-status");
+  const newText = document.getElementById("prop-voice-over").value;
+  const scene = findScene(selectedSceneId);
+  if (newText === scene.voice_over) {
+    status.textContent = "Aucun changement.";
+    return;
+  }
+  status.textContent = "Resynthèse de la voix en cours...";
   try {
-    const result = await window.pywebview.api.insert_image(
-      selectedSceneId, pickedImage.data_uri, xPct, yPct, widthPct, heightPct
-    );
-    currentProject = result.project;
-    status.textContent = "Image insérée et scène re-rendue.";
-    pickedImage = null;
-    document.getElementById("image-picked-name").textContent = "";
-    document.getElementById("btn-insert-image").disabled = true;
+    const result = await window.pywebview.api.update_scene_voice_over(selectedSceneId, newText);
+    scene.voice_over = newText;
+    scene.duration_sec = result.duration_sec;
+    document.getElementById("prop-duration-display").textContent = scene.duration_sec.toFixed(1);
+    status.textContent = "Voix mise à jour — pensez à re-render la scène pour voir/entendre le résultat.";
+    changedSinceRerender = true;
   } catch (err) {
     status.textContent = `Erreur : ${err}`;
   }
 });
+
+// --- Ajout d'éléments (Phase 4) ---------------------------------------------
+
+document.getElementById("btn-add-text").addEventListener("click", () => {
+  if (!selectedSceneId) return;
+  window.EditorCanvas.startPlacingNewText();
+  document.getElementById("image-insert-status").textContent = "Cliquez sur le tableau pour placer le texte.";
+});
+
+let pickedImageDataUri = null;
+
+document.getElementById("btn-pick-image").addEventListener("click", async () => {
+  if (!selectedSceneId) return;
+  const status = document.getElementById("image-insert-status");
+  status.textContent = "";
+  const picked = await window.pywebview.api.pick_and_encode_image();
+  if (!picked) return;
+  pickedImageDataUri = picked.data_uri;
+  window.EditorCanvas.startPlacingNewImage(picked.data_uri);
+  status.textContent = `"${picked.name}" — cliquez sur le tableau pour la placer (coin haut-gauche), redimensionnable ensuite.`;
+});
+
+// --- Sauvegarde des éditions visuelles + re-render --------------------------
+
+// Envoie l'état actuel des strokes (édités côté canvas) à Python avant
+// tout re-rendu — sans ça, un glisser/redimensionnement/ajout/suppression
+// resterait local au JS et n'apparaîtrait jamais dans la vidéo.
+async function saveCurrentSceneEdits() {
+  if (!selectedSceneId) return;
+  const strokes = window.EditorCanvas.serializeStrokesForSave();
+  await window.pywebview.api.update_scene_strokes(selectedSceneId, strokes);
+  const scene = findScene(selectedSceneId);
+  scene.strokes = strokes;
+  changedSinceRerender = false;
+}
+
+document.getElementById("btn-rerender-scene").addEventListener("click", async () => {
+  if (!selectedSceneId) return;
+  const status = document.getElementById("image-insert-status");
+  status.textContent = "Re-rendu en cours...";
+  try {
+    await saveCurrentSceneEdits();
+    await window.pywebview.api.rerender_scene(selectedSceneId);
+    status.textContent = "Scène re-rendue.";
+  } catch (err) {
+    status.textContent = `Erreur : ${err}`;
+  }
+});
+
+document.getElementById("btn-rerender-all").addEventListener("click", async () => {
+  const status = document.getElementById("image-insert-status");
+  status.textContent = "Re-rendu en cours (seules les scènes modifiées sont ré-encodées)...";
+  try {
+    if (selectedSceneId) await saveCurrentSceneEdits();
+    await window.pywebview.api.rerender_all();
+    status.textContent = "Montage final à jour.";
+  } catch (err) {
+    status.textContent = `Erreur : ${err}`;
+  }
+});
+
+// --- Édition en langage naturel ---------------------------------------------
 
 document.getElementById("btn-nl-apply").addEventListener("click", async () => {
   const input = document.getElementById("nl-command-input");
@@ -188,7 +312,7 @@ document.getElementById("btn-nl-apply").addEventListener("click", async () => {
 });
 
 window.addEventListener("pywebviewready", async () => {
-  // Le chemin du projet n'est pas passe en query string sur l'URL file://
+  // Le chemin du projet n'est pas passe en query string sur l'URL
   // (WebView2 echoue a la resoudre) : demande au bridge Python le projet
   // actuellement charge en memoire (ui/js/app.js -> btn-edit -> open_editor).
   const projectPath = await window.pywebview.api.get_current_project_path();

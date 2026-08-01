@@ -681,11 +681,138 @@ périmé après une édition ciblée.
 
 ## Édition post-génération
 
-Écran Éditeur (`ui/editor/`) : liste des scènes, aperçu canvas live de la
-scène sélectionnée, panneau de propriétés (texte, couleur, position,
-durée). Bouton "re-render cette scène" vs "re-render tout" —
-`render/partial_render.py` ne régénère que ce qui a changé (et ne rappelle
-le TTS que si le texte a changé).
+Écran Éditeur (`ui/editor/`) : liste des scènes, aperçu WYSIWYG interactif
+de la scène sélectionnée (voir "Éditeur visuel WYSIWYG" ci-dessous),
+panneau de propriétés contextuel (scène si rien n'est sélectionné,
+élément si un stroke est sélectionné sur le canvas). Bouton "Re-render
+cette scène" vs "Re-render tout" — `render/partial_render.py` ne
+régénère que ce qui a changé (et ne rappelle le TTS que si le texte de la
+voix off a changé, voir "Propriétés de scène" ci-dessous).
+
+### Éditeur visuel WYSIWYG
+
+**Constat de départ** : jusqu'ici, l'écran Éditeur était une façade — le
+canvas était vide (jamais câblé, `// TODO` resté tel quel depuis le début
+de ce chantier), le panneau de propriétés n'exposait que 3 champs au
+niveau de la scène (et aucun n'était réellement sauvegardé nulle part),
+et il n'existait aucune notion de "sélectionner un élément visuel".
+Seules l'édition en langage naturel et les boutons Re-render
+fonctionnaient réellement.
+
+**Décision d'architecture** : `ui/editor/editor_canvas.js` réutilise les
+**mêmes modules que web_template/index.html** (`themes.js`,
+`surfaces/*.js`, `tools/chalk.js`/`marker_veleda.js`, `text_to_path.js`,
+`icon_paths.js`, `icon_to_path.js`, `animations.js`) plutôt qu'un second
+moteur de rendu simplifié — chaque outil est appelé avec `progress=1`
+(trait déjà entièrement tracé, sans l'animation d'écriture) pour un
+aperçu fidèle au rendu final (police manuscrite réelle, icônes, grain
+craie/feutre). Contrairement au moteur de capture (qui accumule la craie
+sans jamais effacer, pour un rendu incrémental rapide sur des milliers de
+frames), ce module redessine l'intégralité du canvas à chaque
+changement : les éléments peuvent être déplacés/supprimés/redimensionnés
+ici, l'hypothèse "jamais effacé" ne tient plus.
+
+**Deux prérequis techniques découverts en construisant cette
+réutilisation**, tous deux corrigés :
+
+1. `Api.open_editor()` chargeait `editor.html` via `.as_uri()` (URL
+   `file://...`). `web_template/index.html` (fenêtre de rendu) est
+   chargée via un chemin brut, ce que pywebview traite différemment :
+   toute URL locale qui n'est NI `http(s)://` NI `file://`
+   (`webview.util.is_local_url`) déclenche son mini serveur HTTP local
+   (`http://localhost:<port>/...`, racine = `base_dir()`, voir
+   `app/paths.py`) — permettant les requêtes locales (XHR synchrone pour
+   charger la police manuscrite, voir point 2) qui échouent en `file://`.
+   `open_editor()` charge donc maintenant `editor.html` de la même façon
+   (chemin brut), ce qui active ce même serveur pour la fenêtre Éditeur.
+2. `text_to_path.js` chargeait la police manuscrite via une URL
+   *relative* (`"fonts/Caveat.ttf"`), qui se résout par rapport à la
+   **page** qui inclut le script, pas au fichier `.js` lui-même — correct
+   depuis `web_template/index.html` (`fonts/` est un sous-dossier de ce
+   même répertoire) mais pointerait vers `ui/editor/fonts/...`
+   (inexistant) une fois ce script inclus depuis `editor.html`. Corrigé
+   en un chemin absolu (`/app/render/web_template/fonts/Caveat.ttf`),
+   résolu depuis la racine du serveur local quelle que soit la page
+   appelante.
+
+**Modèle de données** : `stroke.points` reste TOUJOURS la donnée
+persistée/source de vérité (ancre haut-gauche pour icône/animation/
+image/diagramme, point de départ baseline pour texte, tracé vectoriel
+complet déjà résolu pour "shape") — jamais réécrite avec le tracé
+développé. Le tracé réellement dessinable (contours de lettres/icône) est
+calculé à la volée et mis en cache sur le stroke dans des champs préfixés
+`_` (`_drawPoints`, `_chalkDabs`...), jamais envoyés à Python
+(`EditorCanvas.serializeStrokesForSave()` les dépouille explicitement).
+
+**Interaction** (souris sur le canvas, aucune bibliothèque externe) :
+- **Sélection** : hit-test par boîte englobante (calculée depuis les
+  points réellement dessinables pour texte/forme, depuis `width`/
+  `height` pour icône/animation/image/diagramme) au clic ; le dernier
+  élément posé (dessiné par-dessus) est prioritaire.
+- **Déplacement** : glisser un élément sélectionné translate son ancre
+  (ou tous ses points pour "shape", qui n'a pas d'ancre unique).
+- **Redimensionnement** (Phase 3) : 4 poignées aux coins, uniquement
+  pour les kinds à taille explicite (image, icône, animation,
+  diagramme) — ajuste `width`/`height` et l'ancre selon le coin tiré.
+- **Ajout** (Phase 4) : "+ Texte"/"+ Image..." arment un mode
+  "placement" (`startPlacingNewText`/`startPlacingNewImage`) — le
+  prochain clic sur le canvas pose le nouvel élément à cet endroit
+  (coin haut-gauche pour une image, redimensionnable ensuite comme
+  n'importe quel autre élément).
+- **Édition de texte inline** (Phase 5) : double-clic sur un texte
+  superpose un `<textarea>` HTML positionné exactement sur sa boîte
+  englobante (conversion espace canvas réel ↔ espace écran) ; validé sur
+  Entrée/perte de focus, annulé sur Échap.
+- **Suppression** : bouton dédié dans le panneau de propriétés (élément
+  sélectionné), pas de racourci clavier pour éviter une suppression
+  accidentelle en tapant dans un champ de texte adjacent.
+
+**Persistance** : chaque manipulation ne mute que l'état JS local et
+redessine — aucun aller-retour réseau à chaque pixel de glissé/
+redimensionnement. `Api.update_scene_strokes(scene_id, strokes)`
+(nouveau) remplace l'ensemble des strokes d'une scène ; appelé par
+`editor.js` juste avant `rerender_scene`/`rerender_all`, jamais en
+continu, pour ne payer qu'un seul re-rendu même après plusieurs
+manipulations. Reconstruit les `Stroke`/`Point` à partir du JSON reçu
+(même schéma que `Project.from_dict`).
+
+**Bug préexistant trouvé et corrigé au passage** : `Api.rerender_scene`
+ne sauvegardait jamais le `.vchalk` — la vidéo se mettait à jour mais le
+fichier projet restait périmé, donc toute édition (visuelle ou via NL)
+semblait perdue à la réouverture du projet alors qu'elle était bien dans
+la vidéo déjà rendue. `rerender_scene`/`rerender_all` (nouveau, voir
+ci-dessous) sauvegardent désormais systématiquement après re-rendu, via
+`_current_project_save_path()` (déjà utilisé par `apply_edit_command`/
+`insert_image` — respecte le chemin exact du fichier ouvert, voir section
+"Ouvrir un projet existant").
+
+**"Re-render tout"** appelait auparavant... en fait n'appelait rien du
+tout (bouton présent dans le HTML, jamais câblé). `Api.rerender_all()`
+(nouveau) appelle `Pipeline.render()` directement plutôt que de boucler
+sur `rerender_scene` pour chaque scène : `render_all` (basé sur
+`content_hash`) décide lui-même quelles scènes ré-encoder, réutilisant le
+cache pour les autres — un `rerender_scene` par scène forcerait un
+ré-encodage inconditionnel de tout le projet à chaque clic.
+
+**Propriétés de scène** (voix off) : `prop-duration` est maintenant un
+affichage en lecture seule (la durée est dérivée de l'audio synthétisé,
+l'éditer directement n'aurait pas de sens — utiliser la commande NL
+"raccourcis la scène à Xs" pour ça). Éditer la voix off et cliquer
+"Enregistrer" appelle `Api.update_scene_voice_over` (nouveau), qui
+resynthétise réellement l'audio (`Pipeline.resynthesize_scene`, déjà
+utilisé par l'édition NL) et met à jour la durée affichée — pas de
+re-rendu visuel immédiat, laissé aux boutons Re-render habituels.
+
+**Vérifié de bout en bout sur l'exe packagé**, en pilotant l'application
+réelle (deux fenêtres comme `main.py`) et en simulant des événements DOM
+de souris (`dispatchEvent(new MouseEvent(...))`, jamais le curseur OS
+réel) sur le canvas de l'éditeur : sélection, glisser, édition de texte
+inline (avec commit visible dans le texte du stroke), ajout de texte,
+suppression, ajout + redimensionnement d'image (poignées visibles et
+fonctionnelles à l'écran), puis `update_scene_strokes` + `rerender_scene`
+réels — le texte édité et déplacé apparaît bien dans la vidéo finale
+re-rendue, et l'état édité est correctement rechargé dans une session
+complètement séparée (persistance confirmée, pas seulement en mémoire).
 
 ### Ouvrir un projet existant
 

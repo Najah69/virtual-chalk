@@ -253,13 +253,80 @@ class Api:
         self.load_project(path)
         self.open_editor()
 
+    def update_scene_voice_over(self, scene_id: str, voice_over: str) -> dict[str, Any]:
+        """Met à jour le texte de la voix off d'une scène et resynthétise
+        l'audio correspondant (Pipeline.resynthesize_scene, qui recalcule
+        au passage scene.duration_sec à partir de la durée réelle du
+        nouvel audio — la durée n'est donc jamais éditable directement
+        dans le panneau de propriétés, juste affichée). Pas de re-rendu
+        visuel immédiat : editor.js enchaîne ensuite update_scene_strokes
+        + rerender_scene comme pour toute autre édition, pour ne payer
+        qu'un seul re-rendu même si plusieurs propriétés ont changé."""
+        if not self._current_project:
+            raise RuntimeError("Aucun projet à éditer")
+        scene = self._current_project.find_scene(scene_id)
+        if scene is None:
+            raise ValueError(f"Scène introuvable : {scene_id!r}")
+        scene.voice_over = voice_over
+        pipeline = self._build_pipeline(self._current_voice_profile)
+        voice_profile = self._current_voice_profile or _DEFAULT_VOICE_PROFILE
+        pipeline.resynthesize_scene(scene, voice_profile)
+        return {"duration_sec": scene.duration_sec}
+
     def rerender_scene(self, scene_id: str) -> str:
+        """Re-rend une scène puis sauvegarde le projet — cette sauvegarde
+        manquait jusqu'ici (bug préexistant trouvé en construisant
+        l'éditeur WYSIWYG) : la vidéo se mettait à jour mais le
+        `.vchalk` restait périmé, donc toute édition visuelle
+        (voir update_scene_strokes) semblait perdue à la réouverture du
+        projet alors qu'elle était bien dans la vidéo déjà rendue."""
         if not self._current_project or not self._current_project_dir:
             raise RuntimeError("Aucun projet à re-rendre")
         pipeline = self._build_pipeline(self._current_voice_profile)
         video_path = pipeline.rerender_scene(self._current_project, scene_id, self._current_project_dir)
         self._current_video_path = video_path
+        save_project_file(self._current_project, self._current_project_save_path())
         return str(video_path)
+
+    def rerender_all(self) -> str:
+        """Ré-encode le montage final en ne re-rendant que les scènes
+        dont le contenu a réellement changé (Pipeline.render ->
+        render_all, basé sur content_hash) — contrairement à un appel
+        répété de rerender_scene sur chaque scène, qui forcerait un
+        ré-encodage inconditionnel de tout le projet à chaque clic sur
+        "Re-render tout"."""
+        if not self._current_project or not self._current_project_dir:
+            raise RuntimeError("Aucun projet à re-rendre")
+        pipeline = self._build_pipeline(self._current_voice_profile)
+        video_path = pipeline.render(self._current_project, self._current_project_dir)
+        self._current_video_path = video_path
+        save_project_file(self._current_project, self._current_project_save_path())
+        return str(video_path)
+
+    def update_scene_strokes(self, scene_id: str, strokes: list[dict[str, Any]]) -> None:
+        """Remplace l'ensemble des strokes d'une scène par l'état édité
+        côté éditeur WYSIWYG (ui/editor/editor_canvas.js) — glisser,
+        redimensionner, ajouter/supprimer un élément, éditer un texte ne
+        mutent que l'état JS local (aucun aller-retour réseau à chaque
+        pixel de déplacement) ; cette méthode persiste cet état côté
+        Python juste avant un re-rendu (voir editor.js, appelée juste
+        avant rerender_scene). Ne sauvegarde pas le projet elle-même —
+        rerender_scene s'en charge juste après, une fois la vidéo à jour."""
+        if not self._current_project:
+            raise RuntimeError("Aucun projet à éditer")
+        scene = self._current_project.find_scene(scene_id)
+        if scene is None:
+            raise ValueError(f"Scène introuvable : {scene_id!r}")
+        scene.strokes = [
+            Stroke(
+                points=[Point(p["x"], p["y"], p.get("penUp", False)) for p in s["points"]],
+                color=s["color"], width=s["width"], kind=s.get("kind", "shape"),
+                text=s.get("text", ""), height=s.get("height", 0.0),
+                start_sec=s.get("start_sec", 0.0), end_sec=s.get("end_sec", 0.0),
+                image_data=s.get("image_data", ""),
+            )
+            for s in strokes
+        ]
 
     def insert_image(self, scene_id: str, image_data: str, x_pct: float, y_pct: float,
                       width_pct: float, height_pct: float) -> dict[str, Any]:
@@ -293,13 +360,25 @@ class Api:
     def open_editor(self) -> None:
         """Ouvre l'écran Éditeur (ui/editor/) dans une nouvelle fenêtre.
         Le projet à charger n'est pas passé en query string sur l'URL
-        file:// (WebView2 échoue à la résoudre — testé, ERR_FILE_NOT_FOUND)
-        mais lu par editor.js via get_current_project_path() une fois la
-        fenêtre prête, comme le reste des échanges JS<->Python."""
+        (WebView2 échoue à la résoudre — testé, ERR_FILE_NOT_FOUND) mais
+        lu par editor.js via get_current_project_path() une fois la
+        fenêtre prête, comme le reste des échanges JS<->Python.
+
+        URL passée comme chemin brut (pas .as_uri()/file://) — comme la
+        fenêtre principale et la fenêtre de rendu dans main.py : pywebview
+        ne sert via son mini serveur HTTP local que les URLs "locales"
+        (ni http(s)://, ni file://, voir webview.util.is_local_url), et
+        c'est ce mode qui permet à editor.html d'inclure les mêmes
+        modules de rendu que web_template/index.html (text_to_path.js,
+        icon_to_path.js...) pour un aperçu WYSIWYG fidèle — ces modules
+        chargent des ressources locales (police, icônes) via des requêtes
+        qui échouent silencieusement en file:// mais fonctionnent
+        normalement en http://localhost:<port>/... (même origine que le
+        reste de l'app, aucune restriction cross-scheme)."""
         if not self._current_project:
             raise RuntimeError("Aucun projet à éditer")
         editor_url = UI_DIR / "editor" / "editor.html"
-        webview.create_window("Virtual-Chalk — Éditeur", url=editor_url.as_uri(), js_api=self, width=1200, height=760)
+        webview.create_window("Virtual-Chalk — Éditeur", url=str(editor_url), js_api=self, width=1200, height=760)
 
     def get_current_project_path(self) -> str | None:
         """Chemin du .vchalk à recharger côté editor.js (voir sa gestion de
