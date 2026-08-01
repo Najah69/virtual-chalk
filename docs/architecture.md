@@ -82,6 +82,67 @@ image brute non compressée — voir `marker_veleda.js` pour comparaison :
 le feutre dessine un trait plein lisse (`ctx.stroke()`), donc ce problème
 de dispersion ne le concerne pas.
 
+### Cadre en bois et réalisme du tableau
+
+Retour utilisateur, comparé directement à une photo de référence d'un
+vrai tableau craie : la couleur de fond était déjà dans la bonne famille
+(`#1f4d3a`, un vert forêt sombre — voir `surfaces/greenboard.js`), mais
+deux écarts significatifs manquaient.
+
+**Grain à grande échelle** (`_addSoftClouds`, `board_noise.js`) : le
+grain existant n'était qu'un bruit fin pixel-par-pixel (amplitude ±5,
+non corrélé spatialement — comme de la neige TV), alors qu'un vrai
+tableau essuyé au chiffon montre de larges zones plus claires en arcs
+(traces de chiffon, grande échelle, organique). Ajouté en superposition
+du grain fin : 10 à 18 dégradés radiaux doux, positionnés/dimensionnés/
+pivotés/aplatis aléatoirement, à très faible opacité (0.03-0.08) — un
+bruit BASSE fréquence, contrairement au grain fin haute fréquence, donc
+beaucoup moins coûteux à compresser en H.264 malgré la couche
+supplémentaire. Piège rencontré et corrigé : remplir une ellipse
+pivotée/aplatie avec un dégradé radial défini dans l'espace NON
+transformé laisse un bord dur visible (le rayon du dégradé, calibré pour
+un cercle, dépasse le petit axe de l'ellipse avant de s'estomper à
+alpha=0) — corrigé en définissant le dégradé et la forme remplie dans le
+même espace transformé (`translate`+`rotate`+`scale`), jamais l'un dans
+l'espace canvas brut et l'autre dans un espace déformé.
+
+**Cadre en bois** (`_drawWoodFrame`, largeur = `BOARD_FRAME_RATIO` × plus
+petite dimension du canvas, identique en portrait/paysage puisque les
+deux partagent 1080px comme plus petite dimension) : totalement absent
+auparavant, le tableau occupait tout le canvas bord à bord. Base brune
+unie + bandes de grain (variation de teinte horizontale/verticale) +
+biseau intérieur séparant cadre et zone craie. **Décision structurante** :
+le cadre RÉTRÉCIT la zone craie utilisable à l'intérieur du canvas
+existant plutôt que d'agrandir le canvas pour l'accueillir en plus —
+choisi pour ne rien changer au système de coordonnées 0-100 % utilisé
+partout ailleurs (icônes, texte, diagrammes, placement de la mascotte).
+En contrepartie, `strokes_from_visual_elements` (`app/scenes/schema.py`)
+passe désormais une marge de `resolve_overlaps` élargie
+(`BOARD_FRAME_RATIO` + `BOARD_FRAME_MARGIN_PADDING`, DOIT rester
+synchronisé avec la constante JS du même nom) plutôt que l'ancien défaut
+fixe de 20px, pour qu'un élément placé par le LLM ne se retrouve jamais
+dessiné sous le cadre. Appliqué même pour `whiteboard_marker` (sans
+cadre) : une marge un peu plus généreuse y est sans conséquence, évite
+de faire dépendre le calcul du thème.
+
+**Bâtons de craie** : deux formes statiques dans le coin bas-droit (coin
+OPPOSÉ à `MASCOT_ANCHOR_FRACTION`, bas-gauche, pour ne jamais se
+chevaucher avec une mascotte). Font partie du fond statique mis en cache
+(comme le cadre) — respectés automatiquement par le mécanisme
+d'effacement local des animations, qui redessine depuis ce même cache.
+
+La clé de cache (`window._boardTextureCache["greenboard"]`) reste
+inchangée malgré le nouveau constructeur de texture (`buildFramedBoardNoise`,
+passé en paramètre optionnel à `getCachedBoardTexture` plutôt que
+remplacer la fonction par défaut) : `index.html`/`mascot.js` relisent ce
+cache par le nom exact de la surface pour l'effacement local — une clé
+différente aurait cassé ce mécanisme silencieusement.
+
+Vérifié à travers toute la chaîne, pas seulement sur une capture canvas
+brute : rendu réel (vraie synthèse vocale, vrai encodage H.264) puis
+frame extraite du MP4 final — cadre et texture survivent proprement à la
+compression, texte manuscrit toujours lisible par-dessus.
+
 ### Texte manuscrit (contours réels)
 
 `text_to_path.js` extrait les vrais contours de lettres via **opentype.js**
@@ -1310,6 +1371,13 @@ appel réseau/LLM/TTS ni de vrai rendu ffmpeg/capture d'écran :
 - `test_editor_wysiwyg.py` (mis à jour) — `rerender_scene`/`rerender_all`
   renvoient désormais une URL servie (`http://127.0.0.1:...`) plutôt que
   le chemin brut, cohérent avec le correctif ci-dessus.
+- `test_board_frame.py` — le cadre en bois du tableau (`BOARD_FRAME_RATIO`)
+  élargit correctement la marge de `resolve_overlaps` (plus que l'ancien
+  défaut fixe de 20px), et cette marge reste identique en portrait et en
+  paysage. Ne couvre que la conséquence côté Python — le rendu visuel réel
+  (texture, biseau, bâtons de craie) est vérifié séparément via un script
+  de fumée qui capture un vrai canvas puis une frame extraite d'une vidéo
+  encodée réelle, pas reproductible en pytest pur.
 
 `tests/conftest.py` fournit `FakeLLMProvider` (sous-classe de
 `LLMProvider` qui rejoue une liste de réponses brutes préparées à
