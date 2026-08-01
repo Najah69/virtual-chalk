@@ -135,6 +135,8 @@ function renderScriptEditor(project) {
 
 document.getElementById("btn-go-step2").addEventListener("click", async () => {
   const btn = document.getElementById("btn-go-step2");
+  const errorBox = document.getElementById("step1-error");
+  errorBox.style.display = "none";
   btn.disabled = true;
   const originalLabel = btn.textContent;
   btn.textContent = "Génération du script...";
@@ -146,6 +148,9 @@ document.getElementById("btn-go-step2").addEventListener("click", async () => {
     const project = await window.pywebview.api.generate_script(source, videoProfile, githubContentKind, mobileLayout);
     renderScriptEditor(project);
     goToStep(2);
+  } catch (err) {
+    errorBox.textContent = `Erreur : ${err}`;
+    errorBox.style.display = "block";
   } finally {
     btn.disabled = false;
     btn.textContent = originalLabel;
@@ -161,6 +166,12 @@ let lastVideoPath = null;
 // Api.start_pipeline_from_script.
 document.getElementById("btn-go-step4").addEventListener("click", async () => {
   goToStep(4);
+  const errorBox = document.getElementById("generation-error");
+  const errorBackBtn = document.getElementById("btn-generation-error-back");
+  errorBox.style.display = "none";
+  errorBackBtn.style.display = "none";
+  document.getElementById("progress-bar").style.display = "block";
+
   const editedScenes = Array.from(document.querySelectorAll("#scenes-editor .scene-script-item")).map((el) => ({
     scene_id: el.dataset.sceneId,
     voice_over: el.querySelector(".scene-voice-over").value,
@@ -169,13 +180,26 @@ document.getElementById("btn-go-step4").addEventListener("click", async () => {
   const exportH5p = document.getElementById("export-h5p").checked;
   const theme = document.querySelector(".theme-card.selected")?.dataset.theme || "chalk_board";
   const mascotEnabled = document.getElementById("mascot-enabled").checked;
-  const result = await window.pywebview.api.start_pipeline_from_script(
-    editedScenes, voiceProfile, exportH5p, theme, mascotEnabled
-  );
-  lastVideoPath = result.video_path;
-  document.getElementById("result-video").src = toFileUri(result.video_path);
-  goToStep(5);
+  try {
+    const result = await window.pywebview.api.start_pipeline_from_script(
+      editedScenes, voiceProfile, exportH5p, theme, mascotEnabled
+    );
+    lastVideoPath = result.video_path;
+    document.getElementById("result-video").src = toFileUri(result.video_path);
+    goToStep(5);
+  } catch (err) {
+    // Sans ce rattrapage, une erreur (ex: SAPI qui ne répond plus, voir
+    // app/tts/sapi_local.py::SYNTHESIS_TIMEOUT_SEC) laissait la barre de
+    // progression figée indéfiniment, sans aucun message — la promesse
+    // rejetée n'était gérée nulle part, silencieusement.
+    document.getElementById("progress-bar").style.display = "none";
+    errorBox.textContent = `Erreur : ${err}`;
+    errorBox.style.display = "block";
+    errorBackBtn.style.display = "inline-block";
+  }
 });
+
+document.getElementById("btn-generation-error-back").addEventListener("click", () => goToStep(3));
 
 document.getElementById("btn-open-folder").addEventListener("click", () => {
   window.pywebview.api.open_output_folder();
