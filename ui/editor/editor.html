@@ -24,6 +24,16 @@
     .icon-library .icon-swatch:hover { border-color: var(--board-green); }
     .icon-library .icon-swatch canvas { width: 48px; height: 48px; }
     .icon-library .icon-swatch span { font-size: 9px; color: #ccc; text-align: center; word-break: break-all; line-height: 1.1; }
+    /* Bibliothèque personnelle (Tâche 6) : même grille de vignettes que le
+       socle d'icônes, avec un bouton de suppression discret en plus. */
+    .icon-library .icon-swatch { position: relative; }
+    .icon-library .icon-swatch .swatch-delete {
+      position: absolute; top: 2px; right: 2px; width: 16px; height: 16px; line-height: 14px;
+      text-align: center; border-radius: 50%; background: rgba(0,0,0,0.5); color: #fff;
+      font-size: 11px; cursor: pointer;
+    }
+    .icon-library .icon-swatch .swatch-delete:hover { background: #b3261e; }
+    .icon-library .empty-hint { grid-column: 1 / -1; color: #999; font-style: italic; font-size: 12px; padding: 8px 0; }
     #rerender-section { border-top: 1px solid #e2e0da; margin-top: 16px; padding-top: 16px; }
     #rerender-section button:disabled { opacity: 0.6; cursor: wait; }
     .rerender-status { font-size: 13px; font-weight: 600; margin-top: 10px; min-height: 18px; }
@@ -118,6 +128,11 @@
           <input type="color" id="prop-element-color" />
         </label>
         <div class="hint" id="element-kind-label"></div>
+        <div id="save-to-library-row" style="display:none; margin-top:8px">
+          <input type="text" id="library-asset-name" placeholder="Nom (ex : Nuage)" style="width:100%; margin-bottom:6px" />
+          <button class="secondary" id="btn-save-to-library">Enregistrer dans ma bibliothèque</button>
+          <div class="hint" id="library-save-status"></div>
+        </div>
         <button class="secondary" id="btn-delete-element" style="margin-top:6px">Supprimer cet élément</button>
         <button class="secondary" id="btn-deselect-element" style="margin-top:6px">Désélectionner</button>
       </div>
@@ -126,10 +141,12 @@
         <button class="secondary" id="btn-add-text">+ Texte</button>
         <button class="secondary" id="btn-pick-image">+ Image...</button>
         <button class="secondary" id="btn-toggle-icons">+ Icône...</button>
+        <button class="secondary" id="btn-toggle-library">+ Mes éléments...</button>
       </div>
       <div class="hint" id="image-insert-status"></div>
 
       <div id="icon-library" class="icon-library" style="display:none"></div>
+      <div id="my-library" class="icon-library" style="display:none"></div>
 
       <div id="rerender-section">
         <button class="primary" id="btn-rerender-scene">Re-render cette scène</button>
@@ -184,6 +201,7 @@
   <script src="../../app/render/web_template/icon_to_path.js"></script>
   <script src="../../app/render/web_template/icon_sprite.js"></script>
   <script src="../../app/render/web_template/animations.js"></script>
+  <script src="library.js"></script>
   <script src="editor_canvas.js"></script>
   <script src="timeliner.js"></script>
   <script src="editor.js"></script>

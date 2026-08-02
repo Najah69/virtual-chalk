@@ -202,6 +202,15 @@ function showElementProperties(stroke) {
     colorRow.style.display = "block";
     colorInput.value = stroke.color || "#ffffff";
   }
+
+  // Bibliothèque personnelle (Tâche 6) : seul "shape" est éligible (un
+  // tracé déjà entièrement vectorisé — un diagramme généré en fait partie
+  // une fois résolu, voir app/pipeline.py) — même restriction que côté
+  // Python (LIBRARY_ELIGIBLE_KINDS), vérifiée ici aussi pour ne montrer le
+  // bouton que quand il a une chance de fonctionner.
+  const saveToLibraryRow = document.getElementById("save-to-library-row");
+  saveToLibraryRow.style.display = stroke.kind === "shape" ? "block" : "none";
+  document.getElementById("library-save-status").textContent = "";
 }
 
 document.getElementById("prop-element-text").addEventListener("change", () => {
@@ -329,6 +338,92 @@ document.getElementById("btn-toggle-icons").addEventListener("click", () => {
   } else {
     buildIconLibrary();
     library.style.display = "grid";
+  }
+});
+
+// --- Bibliothèque personnelle (Tâche 6) --------------------------------------
+//
+// Section "Mes éléments" à côté du socle d'icônes fixe, même mécanisme de
+// vignette (EditorCanvas.drawLibraryAssetThumbnail) et de placement par clic
+// (startPlacingNewLibraryAsset). Stockage GLOBAL côté Python (pas par
+// projet) : reconstruite à chaque ouverture (pas de cache "déjà construit"
+// comme buildIconLibrary, qui elle ne change jamais) pour refléter tout de
+// suite un ajout/une suppression faite dans la même session.
+
+document.getElementById("btn-save-to-library").addEventListener("click", async () => {
+  const status = document.getElementById("library-save-status");
+  const payload = window.EditorCanvas.getSelectedStrokeForLibrary();
+  if (!payload) {
+    status.textContent = "Cet élément ne peut pas être enregistré.";
+    return;
+  }
+  const name = document.getElementById("library-asset-name").value.trim();
+  status.textContent = "Enregistrement...";
+  try {
+    await window.pywebview.api.save_library_asset(name, payload.kind, payload.color, payload.points, payload.bbox);
+    document.getElementById("library-asset-name").value = "";
+    status.textContent = "Enregistré dans « Mes éléments ».";
+    myLibraryStale = true;
+  } catch (err) {
+    status.textContent = `Erreur : ${err}`;
+  }
+});
+
+// true après un ajout/une suppression : force buildMyLibrary à refaire
+// l'appel réseau au prochain affichage plutôt que de garder une liste
+// périmée si la section était déjà ouverte avant l'édition.
+let myLibraryStale = true;
+
+async function buildMyLibrary() {
+  const library = document.getElementById("my-library");
+  const assets = await window.pywebview.api.list_library_assets();
+  library.innerHTML = "";
+  if (!assets.length) {
+    library.innerHTML = '<div class="empty-hint">Aucun élément enregistré pour l\'instant — sélectionnez une forme sur le tableau puis « Enregistrer dans ma bibliothèque ».</div>';
+    myLibraryStale = false;
+    return;
+  }
+  for (const asset of assets) {
+    const swatch = document.createElement("div");
+    swatch.className = "icon-swatch";
+    const canvas = document.createElement("canvas");
+    canvas.width = 96;
+    canvas.height = 96;
+    const label = document.createElement("span");
+    label.textContent = asset.name;
+    const del = document.createElement("span");
+    del.className = "swatch-delete";
+    del.textContent = "×";
+    del.title = "Supprimer cet élément";
+    del.addEventListener("click", async (evt) => {
+      evt.stopPropagation();
+      await window.pywebview.api.delete_library_asset(asset.asset_id);
+      myLibraryStale = true;
+      buildMyLibrary();
+    });
+    swatch.appendChild(canvas);
+    swatch.appendChild(label);
+    swatch.appendChild(del);
+    swatch.addEventListener("click", () => {
+      if (!selectedSceneId) return;
+      window.EditorCanvas.startPlacingNewLibraryAsset(asset);
+      document.getElementById("image-insert-status").textContent =
+        `« ${asset.name} » — cliquez sur le tableau pour la placer.`;
+    });
+    library.appendChild(swatch);
+    window.EditorCanvas.drawLibraryAssetThumbnail(canvas, asset, currentProject ? currentProject.theme : "chalk_board");
+  }
+  myLibraryStale = false;
+}
+
+document.getElementById("btn-toggle-library").addEventListener("click", async () => {
+  const library = document.getElementById("my-library");
+  const showing = library.style.display !== "none";
+  if (showing) {
+    library.style.display = "none";
+  } else {
+    library.style.display = "grid";
+    if (myLibraryStale) await buildMyLibrary();
   }
 });
 

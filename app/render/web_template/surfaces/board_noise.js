@@ -102,42 +102,168 @@ window.buildBoardNoise = function buildBoardNoise(width, height, baseColor) {
 // de la zone craie (jamais sous le cadre).
 window.BOARD_FRAME_RATIO = 0.035;
 
+// Région d'un seul montant du cadre, coupée en onglet à 45° à chaque coin
+// (comme un vrai cadre assemblé) plutôt qu'un simple rectangle — sans ça,
+// les 4 montants se chevauchent aux coins et aucune ligne de joint n'est
+// possible, ce qui est une bonne partie de ce qui fait "autocollant plat"
+// plutôt que "cadre construit".
+function _miteredSidePath(ctx, width, height, frameWidth, side) {
+  ctx.beginPath();
+  if (side === "top") {
+    ctx.moveTo(0, 0); ctx.lineTo(width, 0);
+    ctx.lineTo(width - frameWidth, frameWidth); ctx.lineTo(frameWidth, frameWidth);
+  } else if (side === "bottom") {
+    ctx.moveTo(0, height); ctx.lineTo(width, height);
+    ctx.lineTo(width - frameWidth, height - frameWidth); ctx.lineTo(frameWidth, height - frameWidth);
+  } else if (side === "left") {
+    ctx.moveTo(0, 0); ctx.lineTo(frameWidth, frameWidth);
+    ctx.lineTo(frameWidth, height - frameWidth); ctx.lineTo(0, height);
+  } else {
+    ctx.moveTo(width, 0); ctx.lineTo(width, height);
+    ctx.lineTo(width - frameWidth, height - frameWidth); ctx.lineTo(width - frameWidth, frameWidth);
+  }
+  ctx.closePath();
+}
+
+// Traits de veine longs et LÉGÈREMENT ONDULÉS (courbe quadratique, pas des
+// droites) courant le long de l'axe du montant — c'est cette ondulation,
+// absente de l'ancienne version (droites 1-2px dans n'importe quel sens),
+// qui distingue une vraie texture de bois d'un simple hachurage aléatoire.
+// `horizontal` = le sens du fil (true pour les traverses haut/bas, false
+// pour les montants gauche/droite) ; les couleurs alternent clair/foncé et
+// varient en opacité/épaisseur pour éviter tout effet de motif répété.
+function _woodGrainStreaks(ctx, x, y, w, h, horizontal, light, dark) {
+  const length = horizontal ? w : h;
+  const thickness = horizontal ? h : w;
+  const count = Math.max(6, Math.round(length / (thickness * 1.8)));
+  for (let i = 0; i < count; i++) {
+    const t = (i + 0.5) / count + (Math.random() - 0.5) * (1 / count) * 0.7;
+    ctx.strokeStyle = Math.random() > 0.4 ? dark : light;
+    ctx.globalAlpha = 0.10 + Math.random() * 0.18;
+    ctx.lineWidth = Math.max(0.6, thickness * (0.03 + Math.random() * 0.06));
+    ctx.beginPath();
+    if (horizontal) {
+      const yPos = y + t * h;
+      const wobble = h * 0.35;
+      ctx.moveTo(x, yPos + (Math.random() - 0.5) * wobble);
+      ctx.quadraticCurveTo(
+        x + w * 0.5, yPos + (Math.random() - 0.5) * wobble,
+        x + w, yPos + (Math.random() - 0.5) * wobble
+      );
+    } else {
+      const xPos = x + t * w;
+      const wobble = w * 0.35;
+      ctx.moveTo(xPos + (Math.random() - 0.5) * wobble, y);
+      ctx.quadraticCurveTo(
+        xPos + (Math.random() - 0.5) * wobble, y + h * 0.5,
+        xPos + (Math.random() - 0.5) * wobble, y + h
+      );
+    }
+    ctx.stroke();
+  }
+  ctx.globalAlpha = 1;
+}
+
 function _drawWoodFrame(ctx, width, height, frameWidth) {
-  const base = "#8a5a34";
-  const dark = "#6b4423";
-  const light = "#a9744a";
-  const bevel = "#4a2d15";
+  // Palette calibrée sur la photo de référence (moyennes de pixels réels,
+  // pas choisies à l'oeil) : un bois beaucoup plus roux/saturé qu'un brun
+  // neutre — c'est en grande partie ce qui faisait "plastique" avant.
+  const base = "#6e3a0f";
+  const light = "#a8734b";
+  const dark = "#462302";
+  const groove = "#140a03";
+  // Fin liseré clair juste avant la rainure sombre — repéré sur la photo
+  // de référence (un pixel-scan de la zone de jonction cadre/tableau y
+  // montre un pic de luminosité net juste avant la ligne sombre, signe
+  // d'une feuillure biseautée qui accroche la lumière plutôt qu'une
+  // simple marche d'escalier) : sans ce liseré, la transition cadre ->
+  // tableau reste plate même avec un dégradé sur le montant.
+  const bevelHighlight = "#c99a72";
 
   ctx.save();
+
+  // Fond de sécurité : les 4 montants en onglet ci-dessous se rejoignent
+  // exactement aux coins, mais un aplat dessous évite tout liseré blanc
+  // d'arrondi de sous-pixel entre deux régions adjacentes.
   ctx.fillStyle = base;
   ctx.fillRect(0, 0, width, height);
 
-  // Bandes de grain (variation de teinte) horizontales/verticales au
-  // hasard — suggère une texture de bois sans reproduire un vrai motif de
-  // veines (inutile à l'échelle/lisibilité d'une vidéo). Dessinées sur
-  // tout le canvas puis recouvertes au centre par la zone craie : plus
-  // simple qu'un clip, coût négligeable (texture construite une seule
-  // fois par vidéo, pas par frame).
-  ctx.globalAlpha = 0.35;
-  for (let i = 0; i < 14; i++) {
-    ctx.fillStyle = Math.random() > 0.5 ? dark : light;
-    if (Math.random() > 0.5) {
-      ctx.fillRect(0, Math.random() * height, width, 1 + Math.random() * 2);
-    } else {
-      ctx.fillRect(Math.random() * width, 0, 1 + Math.random() * 2, height);
-    }
+  // Chaque montant : dégradé PERPENDICULAIRE au fil (à travers son
+  // épaisseur, pas le long) — plus clair vers l'extérieur du cadre, plus
+  // sombre vers l'intérieur (là où le tableau s'encastre). C'est ce
+  // dégradé qui donne un profil légèrement bombé/biseauté au lieu d'un
+  // aplat de couleur uniforme ; `outer` fixe le point de départ (bord
+  // extérieur, clair) et le point d'arrivée (bord intérieur, sombre) du
+  // dégradé pour chaque montant.
+  const sides = [
+    { name: "top", x: 0, y: 0, w: width, h: frameWidth, horizontal: true,
+      outer: [0, 0, 0, frameWidth] },
+    { name: "bottom", x: 0, y: height - frameWidth, w: width, h: frameWidth, horizontal: true,
+      outer: [0, height, 0, height - frameWidth] },
+    { name: "left", x: 0, y: 0, w: frameWidth, h: height, horizontal: false,
+      outer: [0, 0, frameWidth, 0] },
+    { name: "right", x: width - frameWidth, y: 0, w: frameWidth, h: height, horizontal: false,
+      outer: [width, 0, width - frameWidth, 0] },
+  ];
+
+  for (const side of sides) {
+    ctx.save();
+    _miteredSidePath(ctx, width, height, frameWidth, side.name);
+    ctx.clip();
+
+    const grad = ctx.createLinearGradient(...side.outer);
+    grad.addColorStop(0, light);
+    grad.addColorStop(0.55, base);
+    grad.addColorStop(1, dark);
+    ctx.fillStyle = grad;
+    ctx.fillRect(0, 0, width, height);
+
+    _woodGrainStreaks(ctx, side.x, side.y, side.w, side.h, side.horizontal, light, dark);
+
+    ctx.restore();
   }
+
+  // Joints d'onglet aux 4 coins (45°) — discrets mais présents sur un
+  // vrai cadre assemblé, contrairement à une bordure de couleur unie sans
+  // aucune séparation entre montants.
+  ctx.strokeStyle = "rgba(25, 12, 4, 0.35)";
+  ctx.lineWidth = Math.max(1, frameWidth * 0.015);
+  ctx.beginPath();
+  ctx.moveTo(0, 0); ctx.lineTo(frameWidth, frameWidth);
+  ctx.moveTo(width, 0); ctx.lineTo(width - frameWidth, frameWidth);
+  ctx.moveTo(0, height); ctx.lineTo(frameWidth, height - frameWidth);
+  ctx.moveTo(width, height); ctx.lineTo(width - frameWidth, height - frameWidth);
+  ctx.stroke();
+
+  // Liseré clair juste avant la rainure (voir bevelHighlight ci-dessus) :
+  // légèrement plus large et positionné juste à l'extérieur du trait
+  // sombre, pour lire comme une arête biseautée qui accroche la lumière
+  // plutôt qu'une deuxième ligne parallèle sans rapport avec la première.
+  const grooveWidth = Math.max(3, frameWidth * 0.16);
+  const highlightWidth = Math.max(2, frameWidth * 0.1);
+  const highlightInset = frameWidth - grooveWidth - highlightWidth / 2;
+  ctx.strokeStyle = bevelHighlight;
+  ctx.globalAlpha = 0.55;
+  ctx.lineWidth = highlightWidth;
+  ctx.strokeRect(
+    highlightInset, highlightInset,
+    width - 2 * highlightInset, height - 2 * highlightInset
+  );
   ctx.globalAlpha = 1;
 
-  // Biseau intérieur : séparation visible entre le cadre et le tableau,
-  // comme sur un vrai cadre en bois.
-  const lineWidth = Math.max(2, frameWidth * 0.06);
-  ctx.strokeStyle = bevel;
-  ctx.lineWidth = lineWidth;
+  // Feuillure intérieure : le tableau est ENCASTRÉ dans le cadre, pas
+  // simplement peint dessus — un trait large et sombre (pas un simple
+  // filet 2px) pour suggérer une vraie rainure plutôt qu'une ligne de
+  // séparation plate.
+  ctx.strokeStyle = groove;
+  ctx.globalAlpha = 0.85;
+  ctx.lineWidth = grooveWidth;
   ctx.strokeRect(
-    frameWidth - lineWidth / 2, frameWidth - lineWidth / 2,
-    width - 2 * frameWidth + lineWidth, height - 2 * frameWidth + lineWidth
+    frameWidth - grooveWidth / 2, frameWidth - grooveWidth / 2,
+    width - 2 * frameWidth + grooveWidth, height - 2 * frameWidth + grooveWidth
   );
+  ctx.globalAlpha = 1;
+
   ctx.restore();
 }
 

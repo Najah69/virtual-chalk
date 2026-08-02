@@ -2,7 +2,7 @@
 ; Compiler avec ISCC.exe une fois le build PyInstaller terminé (dist/virtual-chalk/).
 
 #define MyAppName "Virtual-Chalk"
-#define MyAppVersion "0.3.0"
+#define MyAppVersion "0.4.0"
 #define MyAppExeName "virtual-chalk.exe"
 
 [Setup]
@@ -20,6 +20,18 @@ DefaultGroupName={#MyAppName}
 OutputBaseFilename=virtual-chalk-setup
 Compression=lzma
 SolidCompression=yes
+; Icone de l'installateur lui-meme (barre des taches/proprietes du .exe de
+; setup) — meme fichier que l'icone de l'application (voir
+; build/pyinstaller.spec), pour une identite visuelle coherente entre
+; l'installateur et l'app installee.
+SetupIconFile=..\resources\branding\app_icon.ico
+; Bannière de l'assistant (meme image que le splash-screen de l'app, voir
+; ui/splash.html) — 1x/2x fournis pour le haut-DPI, Inno Setup choisit
+; automatiquement. WizardImageStretch=no : l'image (deja mise en boite aux
+; bonnes dimensions, voir resources/branding/) ne doit jamais etre etiree.
+WizardImageFile=..\resources\branding\wizard_image_164x314.png,..\resources\branding\wizard_image_328x628.png
+WizardSmallImageFile=..\resources\branding\wizard_small_55x58.png,..\resources\branding\wizard_small_110x116.png
+WizardImageStretch=no
 
 [Files]
 Source: "..\dist\virtual-chalk\*"; DestDir: "{app}"; Flags: recursesubdirs

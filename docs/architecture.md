@@ -109,9 +109,8 @@ l'espace canvas brut et l'autre dans un espace déformé.
 **Cadre en bois** (`_drawWoodFrame`, largeur = `BOARD_FRAME_RATIO` × plus
 petite dimension du canvas, identique en portrait/paysage puisque les
 deux partagent 1080px comme plus petite dimension) : totalement absent
-auparavant, le tableau occupait tout le canvas bord à bord. Base brune
-unie + bandes de grain (variation de teinte horizontale/verticale) +
-biseau intérieur séparant cadre et zone craie. **Décision structurante** :
+auparavant, le tableau occupait tout le canvas bord à bord. **Décision
+structurante** :
 le cadre RÉTRÉCIT la zone craie utilisable à l'intérieur du canvas
 existant plutôt que d'agrandir le canvas pour l'accueillir en plus —
 choisi pour ne rien changer au système de coordonnées 0-100 % utilisé
@@ -142,6 +141,54 @@ Vérifié à travers toute la chaîne, pas seulement sur une capture canvas
 brute : rendu réel (vraie synthèse vocale, vrai encodage H.264) puis
 frame extraite du MP4 final — cadre et texture survivent proprement à la
 compression, texte manuscrit toujours lisible par-dessus.
+
+### Cadre en bois v2 — retour "trop plat/cheap"
+
+Retour utilisateur après coup, à nouveau comparé à la même photo de
+référence : la première version (base brune unie + quelques bandes de
+teinte aléatoires + un trait de séparation) restait plate à l'écran —
+aucune des vraies caractéristiques d'un cadre en bois PHOTOGRAPHIÉ n'y
+était : pas de veinage directionnel, pas de joints d'onglet aux coins,
+pas de dégradé d'éclairage à travers l'épaisseur d'un montant. Réécrit
+entièrement (`_drawWoodFrame`, `board_noise.js`), avec une palette
+calibrée sur de vraies moyennes de pixels de la photo (pas choisie à
+l'oeil) plutôt qu'un brun neutre générique.
+
+- **Montants coupés en onglet à 45°** (`_miteredSidePath`) : les 4 côtés
+  du cadre sont désormais 4 régions trapézoïdales distinctes (clippées),
+  pas un seul rectangle plein — condition nécessaire pour que des joints
+  de coin et un veinage propre à chaque côté aient un sens.
+- **Veinage directionnel** (`_woodGrainStreaks`) : traits longs et
+  LÉGÈREMENT ONDULÉS (courbe quadratique, pas des droites) courant le
+  long de l'axe de chaque montant — horizontal sur les traverses haut/bas,
+  vertical sur les montants gauche/droite. L'ancienne version dessinait
+  des droites 1-2px dans n'importe quel sens sur tout le canvas, à
+  travers plusieurs montants à la fois.
+- **Dégradé perpendiculaire au fil** par montant : plus clair vers le
+  bord extérieur du cadre, plus sombre vers le bord intérieur (là où le
+  tableau s'encastre) — donne un profil légèrement bombé/biseauté au lieu
+  d'un aplat de couleur uniforme.
+- **Liseré clair juste avant la rainure sombre** (`bevelHighlight`) :
+  repéré en scannant les pixels de la photo de référence à la jonction
+  cadre/tableau — un pic de luminosité net juste avant la ligne sombre,
+  signe d'une feuillure biseautée qui accroche la lumière plutôt qu'une
+  simple marche d'escalier. Sans lui, la transition cadre → tableau reste
+  plate même avec le dégradé par montant.
+- **Joints d'onglet aux coins** : fins traits diagonaux à 45° à chaque
+  coin, superposés après les 4 montants — la séparation visible entre
+  deux pièces de bois assemblées, absente d'une bordure de couleur unie.
+- Palette recalibrée sur des moyennes de pixels réelles de la photo
+  (`base #6e3a0f`, `light #a8734b`, `dark #462302`, `groove #140a03`,
+  `bevelHighlight #c99a72`) — nettement plus roux/saturé que le brun
+  neutre `#8a5a34` d'origine, qui contribuait à l'aspect plastique.
+
+Vérifié : rendu réel du render surface aux deux orientations (paysage et
+portrait — les 4 montants en onglet restent corrects, juste des
+proportions différentes), zoom pixel sur un coin pour confirmer l'absence
+d'artefact de raccord entre montants adjacents, puis à nouveau toute la
+chaîne réelle (vraie synthèse, vrai encodage H.264, frame extraite du MP4
+final) — grain, joints d'onglet, dégradé et rainure survivent proprement
+à la compression.
 
 ### Texte manuscrit (contours réels)
 
@@ -1600,6 +1647,310 @@ brainstorming, jamais approfondie mais dans le même esprit).
   3) — un `dispatchEvent("click")` simulé dans le test ne déclenchait donc
   jamais la sélection ; corrigé en simulant la vraie séquence d'événements.
 
+## Bibliothèque personnelle — Tâche 6
+
+Sixième tâche, hors blueprint Timeline (issue du brainstorming "champ des
+possibles" du début de session — voir la carte "Bibliothèque personnelle"
+de la feuille de route). Trois décisions actées avant d'écrire ce code :
+**portée globale** (comme les profils de voix — disponible dans tous les
+projets futurs, jamais embarquée dans un `.vchalk`), **statique pour
+l'instant** (les presets animés, ex. "mon orbite à 3 corps", dépendent d'un
+panneau de propriétés pour éléments animés qui n'existe pas encore — phase
+séparée), et **aucune connaissance du LLM** (purement manuel via l'éditeur,
+pas de suggestion automatique à la génération).
+
+- **`app/library/asset_library.py`** : `LibraryAsset` (dataclass), stocké
+  en JSON dans `config_dir()/asset_library.json` (même répertoire que
+  `Settings`, voir `app/settings.py`). Un seul kind éligible :
+  **`"shape"`** — c'est la représentation FINALE d'un tracé déjà
+  vectorisé (un diagramme généré passe en `kind="shape"` une fois résolu,
+  voir `Pipeline.finish_generation`/`app/pipeline.py`, "diagram" n'étant
+  qu'un kind transitoire avant résolution) ; c'est aussi le seul kind dont
+  TOUS les points bougent ensemble lors d'un déplacement dans l'éditeur
+  (`editor_canvas.js::moveStroke`) — un icône/texte/image a une ancre
+  séparée de son contenu dessiné, incompatible avec un stockage normalisé
+  replaçable à toute taille.
+- **Normalisation** (`normalize_points`) : même convention que les icônes
+  (`icon_to_path.js::iconToPoints`, viewBox natif de largeur fixe
+  `LIBRARY_NATIVE_WIDTH = 24`) — un point stocké se replace via
+  `x_placé = x_ancre + x_natif * (taille_cible / 24)`. La largeur native
+  est fixée une fois pour toutes ; seule la hauteur native varie pour
+  préserver l'aspect d'origine (jamais de déformation à la réutilisation,
+  y compris en portrait).
+- **`Api.list_library_assets`/`save_library_asset`/`delete_library_asset`**
+  (`app/api_bridge.py`) : orchestration mince — toute la logique
+  (normalisation, validation du kind, persistance) vit dans
+  `asset_library.py`, testable sans pywebview.
+- **`ui/editor/library.js`** (nouveau, mêmes conventions que
+  `timeliner.js`) : `window.Library.assetToPoints(asset, x, y, size)`,
+  formule inverse de la normalisation Python — aucune persistance côté JS,
+  uniquement la conversion géométrique.
+- **`ui/editor/editor_canvas.js`** : `drawLibraryAssetThumbnail` (même
+  principe que `drawIconThumbnail`, mais à partir de points déjà
+  normalisés plutôt qu'un nom d'icône du socle fixe — centré verticalement
+  en tenant compte de l'aspect natif réel, pas forcément carré comme une
+  icône), `startPlacingNewLibraryAsset`/`_addLibraryAssetStrokeAt` (place
+  un preset comme un stroke `"shape"` ORDINAIRE, points entièrement
+  développés à la taille choisie — pas de nouveau kind de stroke, pas de
+  référence différée comme pour les icônes, donc AUCUN changement requis
+  dans le pipeline de rendu/`resolve_overlaps`/le reste du moteur),
+  `getSelectedStrokeForLibrary` (renvoie `{kind, color, points, bbox}` du
+  stroke sélectionné, ou `null` s'il n'est pas éligible).
+- **UX** : section "Mes éléments" dans la grille de vignettes de l'éditeur,
+  à côté du socle d'icônes (`#my-library`, même style que `#icon-library`)
+  — reconstruite à chaque ouverture (pas de cache "déjà construit" comme
+  pour le socle fixe, qui lui ne change jamais) pour refléter tout de
+  suite un ajout/une suppression fait dans la même session. Bouton
+  "Enregistrer dans ma bibliothèque" dans le panneau de propriétés,
+  visible uniquement pour un stroke `"shape"` sélectionné. Suppression par
+  un petit bouton "×" sur chaque vignette.
+- **Limitation assumée, pas cachée** : un preset placé n'est PAS
+  redimensionnable après coup — même limitation que n'importe quel autre
+  stroke `"shape"` déjà vectorisé (un diagramme généré par le LLM, par
+  exemple), pas une régression introduite ici. La taille de placement par
+  défaut (`LIBRARY_DEFAULT_WIDTH = 220px`, même largeur qu'un icône) est
+  donc définitive.
+- **Vérifié** par un harnais pywebview réel (bibliothèque personnelle réelle
+  de l'utilisateur sauvegardée/restaurée autour du test, jamais polluée) :
+  sélection d'un vrai stroke `"shape"` existant dans un projet, bouton
+  d'enregistrement visible seulement pour ce kind, sauvegarde persistée et
+  relue depuis le disque, vignette réelle affichée dans "Mes éléments",
+  placement sur une AUTRE scène produisant un stroke `"shape"` avec
+  exactement le même nombre de points que l'original, puis suppression
+  bout en bout. Complété par 9 tests unitaires (`tests/test_asset_library.py`)
+  sur la normalisation (aller-retour pixel exact) et la persistance
+  (kind non éligible rejeté, nom vide replié sur "Sans titre",
+  suppression ciblée).
+
+## Boucle d'auto-critique visuelle
+
+Proposition explicite de l'utilisateur, pas issue du blueprint Timeline :
+après avoir constaté qu'une vidéo générée manquait d'illustration malgré
+un texte de qualité, la demande était que l'IA REGARDE elle-même la vidéo
+produite, juge les manques par rapport au script, et itère sur le moteur
+de rendu jusqu'à ce que l'illustration soit jugée suffisante. Deux
+décisions actées avant d'écrire ce code : **optionnelle** (case à cocher,
+jamais activée par défaut) et **plafonnée à 2 itérations** — chaque
+itération coûte un vrai appel LLM vision et une capture par scène encore
+jugée insuffisante, en plus du coût de génération normal.
+
+**Décision d'architecture clé : la boucle tourne AVANT le premier rendu
+réel, pas après.** Une scène peut être jugée par le modèle à partir de
+simples captures canvas (`FrameCapture.capture_frames_at`, nouveau —
+`window.renderFrames(t, 1, FPS)` réutilisé avec `count=1` pour un instant
+arbitraire) sans avoir besoin d'un encodage ffmpeg complet : ces captures
+lisent l'état EN MÉMOIRE du `Scene` courant via la même fenêtre de rendu
+que le vrai pipeline. Conséquence : les éléments ajoutés par la critique
+sont déjà présents dans le TOUT PREMIER encodage vidéo — pas de cycle
+"encoder → critiquer → ré-encoder" qui gaspillerait le premier rendu.
+Ordre dans `Pipeline.finish_generation` : diagrammes → mascotte → voix →
+**critique** → rendu → sauvegarde → export H5P.
+
+- **`app/critique/visual_critique.py`** : `run_critique_loop(llm, project,
+  capture, on_progress)` — pour chaque scène encore "en attente", capture
+  2 images (à 35 % et 75 % de sa durée, ni pile au début où une transition
+  peut être en cours, ni pile à la fin) et appelle
+  `analyze_scene_illustration`. Une scène jugée "suffisante" n'est PLUS
+  JAMAIS ré-analysée aux itérations suivantes (coût déjà justifié une
+  fois) ; une scène "insuffisante" reçoit les `missing_elements` proposés
+  (convertis en `Stroke` via `strokes_from_visual_elements`, le même
+  chemin que la génération initiale) et reste "en attente" pour la
+  prochaine itération, jusqu'à convergence ou `MAX_CRITIQUE_ITERATIONS`.
+- **Vocabulaire JSON partagé avec la génération initiale** : le prompt de
+  critique (`CRITIQUE_SYSTEM_PROMPT`) réutilise `ICON_LIST`/`ANIMATION_LIST`
+  /`ORBIT_MAX_BODIES` de `app/llm/prompts.py` — les éléments proposés
+  doivent être exploitables tels quels par `strokes_from_visual_elements`,
+  pas un format parallèle inventé pour l'occasion.
+- **Nouvelle capacité LLM : `complete_json_with_images`** (`app/llm/base.py`)
+  — variante multimodale de `complete_json`, PAS une méthode abstraite
+  (contrairement à `_complete`) : la vision n'est pas disponible sur tous
+  les fournisseurs (OpenRouter/DeepSeek génériques n'ont pas d'API image
+  uniforme), le repli par défaut lève `NotImplementedError` plutôt qu'un
+  `TypeError` bas niveau. `GeminiProvider._complete_with_images` l'implémente
+  (payload `contents[].parts[]` avec des parts `inline_data`
+  `image/jpeg` en plus du texte). `Pipeline.run_visual_critique` utilise
+  TOUJOURS Gemini pour cette analyse (`self.diagram_api_key`),
+  indépendamment du fournisseur choisi pour le script — même logique que
+  `generate_diagrams`, la clé Gemini est de toute façon déjà requise pour
+  les diagrammes.
+- **Dégradation gracieuse à chaque niveau** : pas de clé Gemini configurée
+  → la boucle entière est ignorée (log, pas d'exception) ; le fournisseur
+  ne supporte pas la vision ou renvoie un JSON inexploitable → la scène
+  concernée est traitée comme "suffisante" (repli vers le comportement
+  d'avant cette fonctionnalité) plutôt que de faire échouer une génération
+  déjà payée en TTS.
+- **Limitation assumée, pas cachée** : les éléments ajoutés par une
+  itération ne passent PAS par un `resolve_overlaps` conscient du contenu
+  déjà placé (par la génération initiale OU par une itération précédente)
+  — `strokes_from_visual_elements` ne résout les chevauchements qu'ENTRE
+  les éléments d'un même appel. La seule protection est l'instruction
+  donnée au modèle de choisir un emplacement visiblement libre sur les
+  images fournies — observé en pratique (voir Vérifié ci-dessous) : des
+  éléments ajoutés à deux itérations différentes peuvent se retrouver
+  visuellement proches/superposés, le modèle ne "voyant" pas parfaitement
+  ce qu'une itération précédente vient d'ajouter au même endroit.
+- **UI** : case à cocher "Améliorer automatiquement les scènes peu
+  illustrées" à l'étape 3 de l'assistant (`ui/index.html`), à côté des
+  cases existantes (export H5P, mascotte) — jamais cochée par défaut.
+  Nouveau step de progression `"critique"` dans `onPipelineProgress`
+  (`ui/js/app.js`).
+
+**Vérifié avec de VRAIS appels Gemini** (pas seulement des doubles de
+test) : une scène délibérément pauvre (un seul texte, sans icône ni
+schéma) capturée via une vraie fenêtre de rendu, envoyée à Gemini —
+verdict réel `sufficient=false` avec un raisonnement cohérent
+("le tableau est totalement vide et ne présente aucune illustration du
+soleil, des océans ou du phénomène d'évaporation") et des éléments
+proposés pertinents et bien formés (icônes `sun`/`wave-sine`/`arrow-up`,
+texte "Évaporation", coordonnées dans `[0,100]`). Boucle complète
+exécutée avec ce vrai modèle jusqu'au plafond de 2 itérations : la scène
+passe de 1 à 8 strokes, capture d'écran finale confirmant un tableau
+réellement illustré (soleil + gouttes d'eau) là où il n'y avait qu'un
+titre — y compris le léger chevauchement entre itérations mentionné
+ci-dessus, observé sur cette même capture. Complété par 24 tests
+unitaires (`test_visual_critique.py`, `test_llm_base.py`,
+`test_gemini_provider.py`, `test_frame_capture.py`) sur l'orchestration
+de la boucle (convergence, plafond, scènes déjà suffisantes jamais
+ré-analysées), le parsing JSON multimodal, la construction de la requête
+Gemini, et la capture de frames à des instants arbitraires — aucun de ces
+tests n'effectue de vrai appel réseau, contrairement à la vérification
+ci-dessus.
+
+### Correction de mise en page du texte (retour utilisateur)
+
+Retour explicite après la première version : "problèmes fréquents de mise
+en page des textes" à intégrer dans la MÊME boucle, avec auto-correction à
+chaque itération — pas une passe séparée. Jusque-là, la critique ne
+pouvait qu'AJOUTER des éléments ; elle ne pouvait rien dire ni rien faire
+sur un élément déjà présent, y compris quand celui-ci débordait du cadre
+ou en chevauchait un autre.
+
+- **Le modèle juge désormais DEUX choses par appel** (`CRITIQUE_SYSTEM_PROMPT`) :
+  l'illustration est-elle suffisante (comme avant), ET la mise en page du
+  texte est-elle propre (chevauchement, dépassement du cadre, texte trop
+  long pour rester lisible) — cherché ACTIVEMENT, pas seulement en repli.
+  Un seul appel/une seule réponse JSON pour les deux, pas deux passes
+  séparées : le modèle voit le même contenu de toute façon.
+- **`_describe_current_elements`** : liste compacte et INDEXÉE des strokes
+  actuels de la scène (index, kind, x/y en %, contenu texte ou nom
+  d'icône), donnée en plus des images dans le prompt utilisateur — sans
+  elle, le modèle peut dire "il y a un problème" mais jamais désigner
+  PRÉCISÉMENT quel élément corriger (une image seule ne permet que
+  d'ajouter, jamais de référencer un élément existant par un identifiant
+  stable).
+- **`layout_fixes`** (nouveau champ du verdict, à côté de `missing_elements`) :
+  chaque correction cible un stroke EXISTANT par son `stroke_index` :
+  - `move` (repositionner) et `shorten_text` (raccourcir le contenu) —
+    **réservés au texte** (`_TEXT_ONLY_FIX_ACTIONS`) : un icône/diagramme/
+    image a une taille FIXE choisie à la génération, jamais variable
+    ailleurs dans le moteur — introduire un déplacement/redimensionnement
+    pour ces kinds ici créerait un axe de variation inédit, hors de la
+    demande explicite ("mise en page des TEXTES").
+  - `remove` — disponible pour n'importe quel kind (opération toujours
+    bien définie, utile si le modèle juge un élément entièrement
+    redondant/cassé).
+  `apply_layout_fixes` (`app/critique/visual_critique.py`) les applique :
+  défensif par construction (index hors limites, action incompatible avec
+  le kind ciblé, champs manquants → ignorés silencieusement, jamais
+  d'exception) ; les suppressions sont appliquées EN DERNIER par index
+  DÉCROISSANT pour ne jamais décaler l'index d'une correction suivante
+  dans le même lot.
+- **Une scène avec des `layout_fixes` appliqués reste "en attente"** pour
+  l'itération suivante, exactement comme une scène avec des
+  `missing_elements` ajoutés — c'est ce qui permet la "auto-correction à
+  chaque loop" demandée : le modèle voit le résultat RÉEL de sa propre
+  correction précédente et peut la rattraper si elle a mal tourné (ex: un
+  texte déplacé qui chevauche maintenant autre chose), plutôt qu'un
+  correctif "à l'aveugle" appliqué une seule fois sans vérification.
+
+**Vérifié avec un VRAI appel Gemini** sur une scène construite avec deux
+textes délibérément superposés (même ancre à quelques pixels près) — le
+modèle a détecté À LA FOIS le chevauchement/l'illisibilité ET l'absence
+totale d'illustration en un seul verdict ("le texte est illisible et
+écrasé sur le bord droit du tableau, et la scène manque totalement
+d'éléments visuels"), proposant dans la MÊME réponse deux `layout_fixes`
+(déplacer chaque texte vers une position distincte, sans chevauchement) et
+5 `missing_elements` formant une séquence cohérente (soleil → flèche →
+plante → flèche → éclair, pour illustrer la photosynthèse). Les
+corrections appliquées ont réellement séparé les deux textes (capture
+avant/après) — confirmé pixel par pixel via les nouvelles coordonnées des
+strokes, pas seulement par lecture du JSON renvoyé. Complété par 12 tests
+unitaires supplémentaires (`apply_layout_fixes` : déplacement,
+raccourcissement refusé si pas réellement plus court, suppressions
+multiples sans décalage d'index, action ignorée sur un kind non éligible,
+index hors limites, entrées malformées ; `run_critique_loop` : une scène
+avec seulement des `layout_fixes` reste en attente ; `analyze_scene_illustration` :
+liste d'éléments indexée bien transmise dans le prompt).
+
+## Identité visuelle (icône, splash-screen, installateur)
+
+Retour utilisateur : les icônes de l'app étaient génériques (celle du
+bootloader PyInstaller, jamais personnalisée — `icon=None` dans
+`build/pyinstaller.spec`). Deux images fournies par l'utilisateur,
+dérivées en plusieurs formats via un script ponctuel (pas un module de
+l'app, exécuté une fois — voir `resources/branding/`) :
+
+- **`resources/branding/app_icon.ico`** (depuis `icone-Virtual-Chalk-3.png`,
+  carrée) : multi-résolution (16 à 256px, un seul fichier .ico via
+  `Image.save(..., sizes=[...])` de Pillow, qui génère toutes les tailles
+  en une fois). Référencée à TROIS endroits qui doivent chacun leur propre
+  copie de cette icône (Windows ne propage pas automatiquement l'icône
+  d'un exe à un autre) :
+  - `build/pyinstaller.spec` (`EXE(..., icon=...)`) — icône de
+    `virtual-chalk.exe` : barre des tâches, raccourcis Bureau/Menu
+    Démarrer (`build/installer.iss` les pointe vers l'exe, pas vers un
+    fichier .ico séparé, donc ils héritent de celle-ci), et icône des
+    fichiers `.vchalk` associés (`VirtualChalkProject\DefaultIcon`,
+    `{app}\{#MyAppExeName},0` — index 0 = l'icône embarquée dans l'exe).
+  - `build/installer.iss` (`SetupIconFile`) — icône du PROGRAMME
+    D'INSTALLATION lui-même (`virtual-chalk-setup.exe`), distincte de
+    celle de l'app installée.
+  - `webview.start(..., icon=...)` (`app/main.py`) — best-effort pour les
+    backends pywebview qui ne récupèrent pas l'icône directement depuis
+    les ressources de l'exe (sans effet nuisible sur EdgeChromium/Windows,
+    qui la lit déjà depuis l'exe).
+- **Bannière `Pub-Virtual-Chalk-2.png`** (carrée), réutilisée à DEUX
+  endroits distincts avec la même image source :
+  - **Splash-screen** (`ui/splash.html` + `ui/img/splash.png`, redimensionnée
+    à 640×640 — inutile de charger le PNG source à pleine résolution pour
+    une fenêtre qui ne fait que quelques centaines de pixels) : nouvelle
+    fenêtre pywebview SANS chrome (`frameless=True`), créée EN PREMIER
+    dans `main()`, pendant que la fenêtre principale est construite
+    CACHÉE (`hidden=True`). `_reveal_windows` (thread lancé par
+    `webview.start(func, ...)`, même mécanisme que tous les harnais de
+    test de cette session) attend `SPLASH_MIN_DISPLAY_SEC` (1,8s — délai
+    ARTIFICIEL : rien de lourd ne charge avant que la fenêtre principale
+    soit prête, sans lui le splash ne serait quasiment jamais vu) puis
+    détruit le splash et révèle la fenêtre principale — SAUF si un projet
+    a été ouvert directement par association de fichier (`.vchalk`), auquel
+    cas `Api.open_project_file` a déjà fait apparaître sa propre fenêtre
+    Éditeur et révéler EN PLUS l'assistant vide n'aurait aucun intérêt.
+  - **Assistant Inno Setup** (`WizardImageFile`/`WizardSmallImageFile`,
+    `build/installer.iss`) : Inno attend des proportions PORTRAIT
+    (164×314 pour la grande image, 55×58 pour la petite) très différentes
+    du carré source — `letterbox()` (dans le script de génération) la
+    redimensionne pour tenir ENTIÈREMENT dans ces dimensions sans
+    déformation ni recadrage, puis la centre sur un fond de la couleur du
+    coin de l'image source ELLE-MÊME (déjà un fond sombre uni sur les deux
+    images fournies), pour que la bande ajoutée soit invisible plutôt
+    qu'une bordure disgracieuse d'une autre couleur. Variantes 2x
+    (328×628, 110×116) fournies pour le haut-DPI — Inno Setup 6 choisit
+    automatiquement dans une liste séparée par des virgules.
+    `WizardImageStretch=no` : ces images sont déjà à la bonne taille,
+    ne jamais les étirer.
+
+**Vérifié** : les trois références à `app_icon.ico` compilent/s'assemblent
+sans erreur (build PyInstaller + build Inno Setup réels, pas juste une
+lecture du script) ; pour le splash, un harnais pywebview réel confirme
+que `<img>` charge et décode réellement l'image (`naturalWidth`/
+`naturalHeight` > 0, pas seulement présente dans le DOM), capture les
+PIXELS RÉELS affichés (dessinés dans un canvas hors-écran puis
+`toDataURL()` — preuve visuelle, pas une simple assertion de dimensions),
+et confirme la bascule complète : le splash est bien détruit
+(`splash not in webview.windows`) et la fenêtre principale bien révélée
+(son DOM répond, l'étape 1 de l'assistant y est présente) après le délai
+minimal.
+
 ## Arborescence
 
 ```
@@ -1758,6 +2109,16 @@ appel réseau/LLM/TTS ni de vrai rendu ffmpeg/capture d'écran :
   raccourcir/tentative de rallonger, avec une vraie resynthèse SAPI et un
   vrai re-rendu ffmpeg) est vérifié séparément par un harnais pywebview
   avec `dispatchEvent` simulé — voir la section Timeline éditable plus haut.
+- `test_asset_library.py` — Tâche 6 : `normalize_points` (le coin
+  haut-gauche de la bbox retombe sur l'origine, la largeur se ramène à
+  `LIBRARY_NATIVE_WIDTH`, `pen_up` préservé, aller-retour placé/normalisé
+  qui retombe EXACTEMENT sur la position pixel d'origine), et
+  `add_asset`/`load_library`/`remove_asset` (kind non éligible rejeté,
+  persistance/rechargement réel via `tmp_path`, nom vide replié sur "Sans
+  titre", suppression ciblée). Le flux complet (sélection d'un vrai stroke
+  `"shape"`, sauvegarde, vignette, placement sur une autre scène,
+  suppression) est vérifié séparément par un harnais pywebview réel — voir
+  la section Bibliothèque personnelle plus haut.
 
 `tests/conftest.py` fournit `FakeLLMProvider` (sous-classe de
 `LLMProvider` qui rejoue une liste de réponses brutes préparées à

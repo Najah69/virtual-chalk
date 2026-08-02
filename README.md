@@ -30,6 +30,12 @@ des correctifs — ce README couvre l'installation et l'utilisation, l'architect
   d'apparition/disparition et le fondu des images insérées suivent une courbe d'accélération naturelle
   (Anime.js, utilisé uniquement comme bibliothèque d'easing pure)
 - Voix : voix Windows locale (SAPI, gratuite, hors-ligne) ou voix Gemini (cloud)
+- Auto-critique visuelle optionnelle (case à cocher, désactivée par défaut) : l'IA regarde de vraies captures
+  de chaque scène produite, juge si l'illustration soutient le texte de la voix off ET si la mise en page du
+  texte est propre (chevauchement, débordement du cadre, texte trop long), puis ajoute les éléments manquants
+  et corrige elle-même (déplace/raccourcit/supprime) ce qui pose problème — jusqu'à 2 passes, avant le premier
+  rendu final. Nécessite une clé API Gemini (même clé que les diagrammes) ; coûte des appels supplémentaires et
+  un peu de temps en plus
 
 **Édition post-génération**
 - Éditeur visuel WYSIWYG : glisser/redimensionner/ajouter/supprimer texte, icônes, images ; édition de texte
@@ -41,6 +47,9 @@ des correctifs — ce README couvre l'installation et l'utilisation, l'architect
 - Édition par commande en langage naturel ("raccourcis la scène 3 à 10s", "change le thème", "supprime la
   scène 2", "ajoute une mascotte"...)
 - Insertion d'images (bitmap/vecteur) directement sur le tableau
+- Bibliothèque personnelle : enregistrer un tracé vectorisé (ex. un diagramme généré, une fois dessiné) dans
+  « Mes éléments », globale et disponible dans tous les projets futurs, pour le replacer d'un clic à n'importe
+  quelle taille sans le redessiner
 - Ouverture d'un projet existant (`.vchalk`, associé à l'application à l'installation)
 
 **Export**

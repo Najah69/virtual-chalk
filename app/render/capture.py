@@ -42,11 +42,7 @@ class FrameCapture:
     def __init__(self, window: webview.Window):
         self.window = window
 
-    def render_scene_frames(self, scene: Scene, theme: str,
-                             canvas_width: float, canvas_height: float) -> Path:
-        out_dir = Path(tempfile.mkdtemp(prefix=f"vc_{scene.scene_id}_"))
-        frame_count = max(1, int(scene.duration_sec * FPS))
-
+    def _load_scene(self, scene: Scene, theme: str, canvas_width: float, canvas_height: float) -> None:
         # canvas_width/height (voir Project.canvas_size) redimensionnent le
         # <canvas> AVANT le dessin du fond (window.loadScene) : un canvas
         # HTML n'a pas de taille "par défaut" liée à la fenêtre qui le
@@ -58,6 +54,12 @@ class FrameCapture:
             f"{canvas_width}, {canvas_height})"
         )
         self._wait_for_images_ready()
+
+    def render_scene_frames(self, scene: Scene, theme: str,
+                             canvas_width: float, canvas_height: float) -> Path:
+        out_dir = Path(tempfile.mkdtemp(prefix=f"vc_{scene.scene_id}_"))
+        frame_count = max(1, int(scene.duration_sec * FPS))
+        self._load_scene(scene, theme, canvas_width, canvas_height)
 
         n = 0
         while n < frame_count:
@@ -72,6 +74,24 @@ class FrameCapture:
             n += batch
 
         return out_dir
+
+    def capture_frames_at(self, scene: Scene, theme: str, canvas_width: float, canvas_height: float,
+                           timestamps: list[float]) -> list[bytes]:
+        """Capture quelques images à des instants PRÉCIS (pas une séquence
+        régulière comme render_scene_frames) directement en mémoire, sans
+        écriture disque — utilisé par la boucle d'auto-critique visuelle
+        (app/critique/visual_critique.py), qui n'a besoin que de quelques
+        aperçus par scène pour juger l'illustration, pas d'un rendu vidéo
+        complet. Réutilise window.renderFrames(t, 1, FPS) (déjà exposé côté
+        JS pour render_scene_frames) avec count=1 par instant demandé,
+        plutôt que d'exposer une nouvelle fonction JS dédiée à un seul
+        instant arbitraire."""
+        self._load_scene(scene, theme, canvas_width, canvas_height)
+        frames = []
+        for t in timestamps:
+            data_urls = self.window.evaluate_js(f"window.renderFrames({t}, 1, {FPS})")
+            frames.append(base64.b64decode(data_urls[0].split(",", 1)[1]))
+        return frames
 
     def _wait_for_images_ready(self) -> None:
         """No-op immédiat si la scène n'a aucun stroke "image" (voir

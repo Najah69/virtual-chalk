@@ -40,20 +40,32 @@ class LLMProvider(ABC):
     def _complete(self, system_prompt: str, user_prompt: str) -> str:
         """Retourne la réponse brute (texte JSON) du modèle."""
 
-    def complete_json(self, system_prompt: str, user_prompt: str) -> dict:
-        """Primitive partagée : appel LLM + parsing JSON, sans hypothèse sur
-        le schéma de la réponse. Utilisée par generate_script (schéma
-        Project), app/edit/nl_commands.py (schéma actions d'édition) et
-        app/i18n/translate.py (schéma traduction) — trois consommateurs
-        différents du même appel brut.
+    def _complete_with_images(self, system_prompt: str, user_prompt: str, images: list[bytes]) -> str:
+        """Variante multimodale de _complete (texte + image(s) JPEG en
+        entrée) — utilisée par la boucle d'auto-critique visuelle
+        (app/critique/visual_critique.py, voir docs/architecture.md).
+        PAS une méthode abstraite (contrairement à _complete) : la vision
+        n'est pas disponible sur tous les fournisseurs (OpenRouter/
+        DeepSeek génériques n'ont pas d'API image uniforme), donc chaque
+        fournisseur ne l'implémente que s'il le peut — le repli par défaut
+        lève NotImplementedError plutôt qu'un TypeError bas niveau, pour
+        que l'appelant puisse dégrader proprement (ne jamais faire échouer
+        toute une génération juste parce que le fournisseur configuré ne
+        supporte pas l'analyse d'image, voir analyze_scene_illustration)."""
+        raise NotImplementedError(
+            f"{type(self).__name__} ne supporte pas l'analyse d'image (complete_json_with_images)"
+        )
 
-        Tolère une réponse entourée de texte parasite (essaie d'abord un
+    def _parse_json_response(self, raw: str) -> dict:
+        """Tolère une réponse entourée de texte parasite (essaie d'abord un
         parsing direct, puis extrait la sous-chaîne {...} en repli) ; lève
         LLMJsonError si aucune des deux tentatives n'aboutit, plutôt que de
         laisser un json.JSONDecodeError brut remonter jusqu'à l'appelant —
         celui-ci doit pouvoir dégrader proprement (voir apply_nl_edit_command,
-        translate_project) au lieu de planter toute l'opération en cours."""
-        raw = self._complete(system_prompt, user_prompt)
+        translate_project) au lieu de planter toute l'opération en cours.
+        Partagée par complete_json et complete_json_with_images : même
+        tolérance de formatage, que la réponse vienne d'un appel texte ou
+        multimodal."""
         try:
             return json.loads(raw)
         except json.JSONDecodeError:
@@ -64,6 +76,19 @@ class LLMProvider(ABC):
             raise LLMJsonError(
                 f"Réponse du modèle non exploitable en JSON : {exc}", raw_response=raw,
             ) from exc
+
+    def complete_json(self, system_prompt: str, user_prompt: str) -> dict:
+        """Primitive partagée : appel LLM + parsing JSON, sans hypothèse sur
+        le schéma de la réponse. Utilisée par generate_script (schéma
+        Project), app/edit/nl_commands.py (schéma actions d'édition) et
+        app/i18n/translate.py (schéma traduction) — trois consommateurs
+        différents du même appel brut."""
+        return self._parse_json_response(self._complete(system_prompt, user_prompt))
+
+    def complete_json_with_images(self, system_prompt: str, user_prompt: str, images: list[bytes]) -> dict:
+        """Variante multimodale de complete_json — voir _complete_with_images
+        pour la raison de son absence de garantie sur tous les fournisseurs."""
+        return self._parse_json_response(self._complete_with_images(system_prompt, user_prompt, images))
 
     def generate_script(self, source_text: str, theme: str = "chalk_board",
                          script_profile: str = DEFAULT_VIDEO_PROFILE,

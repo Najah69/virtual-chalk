@@ -1,0 +1,22 @@
+<!doctype html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8" />
+  <title>Virtual-Chalk</title>
+  <style>
+    /* #2a2a2a = couleur du coin de l'image elle-meme (voir
+       resources/branding/, generate_branding_assets.py) : le bord de la
+       fenetre (sans chrome, voir main.py::show_splash) se fond dans
+       l'image plutot que de laisser un liseré d'une autre couleur. */
+    html, body {
+      margin: 0; padding: 0; width: 100%; height: 100%;
+      background: #2a2a2a; overflow: hidden;
+      display: flex; align-items: center; justify-content: center;
+    }
+    img { width: 100%; height: 100%; object-fit: cover; -webkit-user-select: none; user-select: none; }
+  </style>
+</head>
+<body>
+  <img src="img/splash.png" alt="Virtual-Chalk" draggable="false" />
+</body>
+</html>

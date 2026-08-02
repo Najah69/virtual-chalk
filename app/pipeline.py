@@ -5,14 +5,18 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Callable, Optional
 
+from app.critique.visual_critique import run_critique_loop
 from app.h5p.bookmarks import generate_bookmarks
 from app.h5p.interactions import build_interaction
 from app.h5p.packager import build_h5p
 from app.llm.base import LLMProvider
+from app.llm.gemini import GeminiProvider
 from app.llm.prompts import DEFAULT_VIDEO_PROFILE
+from app.render.capture import FrameCapture
 from app.render.diagram_generator import DIAGRAM_LINE_WIDTH, generate_diagram_points
 from app.render.ffmpeg_wrapper import concat_scenes
 from app.render.partial_render import render_all, render_scene
+from app.render.window_registry import get_render_window
 from app.scenes.project_file import PROJECT_FILE_EXTENSION, save_project_file
 from app.scenes.schema import Project, Scene, add_mascot_timeline
 from app.tts.base import TTSProvider, VoiceProfile
@@ -54,6 +58,12 @@ class GenerationRequest:
     # l'appel LLM (generate_project), car les strokes sont figés en
     # pixels absolus dès cet instant.
     mobile_layout: bool = True
+    # Boucle d'auto-critique visuelle (proposition explicite de
+    # l'utilisateur, voir app/critique/visual_critique.py) : coûte un
+    # appel LLM vision + une capture par scène jugée insuffisante et par
+    # itération (jusqu'à MAX_CRITIQUE_ITERATIONS), en plus du coût de
+    # génération normal — jamais activé par défaut.
+    auto_critique: bool = False
 
 
 class Pipeline:
@@ -143,6 +153,28 @@ class Pipeline:
             if on_progress:
                 on_progress("voice", (i + 1) / total)
 
+    def run_visual_critique(self, project: Project, on_progress: ProgressCallback = None) -> list[str]:
+        """Boucle d'auto-critique visuelle optionnelle (voir
+        GenerationRequest.auto_critique, app/critique/visual_critique.py) —
+        placée entre la synthèse vocale et le premier rendu réel dans
+        finish_generation : les éléments visuels ajoutés ici sont donc déjà
+        inclus dans le TOUT PREMIER encodage ffmpeg, pas besoin de
+        ré-encoder après coup une fois la boucle terminée.
+
+        Utilise TOUJOURS Gemini pour l'analyse d'image (self.diagram_api_key),
+        indépendamment du fournisseur LLM choisi pour le script — même
+        logique que generate_diagrams : la vision multimodale n'est pas
+        disponible sur tous les fournisseurs (voir
+        LLMProvider._complete_with_images), et la clé Gemini est de toute
+        façon déjà requise pour les diagrammes, donc ne pas en redemander
+        une deuxième distincte pour cette fonctionnalité."""
+        if not self.diagram_api_key:
+            logger.warning("Auto-critique visuelle ignorée : pas de clé API Gemini configurée")
+            return []
+        vision_llm = GeminiProvider(api_key=self.diagram_api_key, model="")
+        capture = FrameCapture(get_render_window())
+        return run_critique_loop(vision_llm, project, capture, on_progress)
+
     def project_dir(self, slug: str, lang: str = DEFAULT_LANGUAGE) -> Path:
         """Répertoire de sortie d'un projet pour une langue donnée : un
         dossier par projet, un sous-dossier par langue à l'intérieur
@@ -191,6 +223,10 @@ class Pipeline:
             # pas être choisi comme cible de "point" par la mascotte.
             add_mascot_timeline(project)
         self.synthesize_voices(project, request.voice_profile, on_progress)
+        if request.auto_critique:
+            # AVANT le rendu (pas après) : les éléments ajoutés ici sont
+            # inclus dès le premier encodage ffmpeg, voir run_visual_critique.
+            self.run_visual_critique(project, on_progress)
         out_dir = self.project_dir(project.slug, DEFAULT_LANGUAGE)
         video_path = self.render(project, out_dir, on_progress)
         save_project_file(project, out_dir / f"project{PROJECT_FILE_EXTENSION}")

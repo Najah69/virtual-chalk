@@ -45,7 +45,7 @@ document.querySelectorAll(".step").forEach((el) => {
 });
 
 window.onPipelineProgress = function (step, fraction) {
-  const label = { script: "Script...", diagram: "Schémas...", voice: "Voix...", render: "Animation...", encode: "Assemblage vidéo..." }[step] || step;
+  const label = { script: "Script...", diagram: "Schémas...", voice: "Voix...", critique: "Amélioration des illustrations...", render: "Animation...", encode: "Assemblage vidéo..." }[step] || step;
   document.getElementById("progress-label").textContent = label;
   document.getElementById("progress-bar").value = fraction;
 };
@@ -178,9 +178,10 @@ document.getElementById("btn-go-step4").addEventListener("click", async () => {
   const exportH5p = document.getElementById("export-h5p").checked;
   const theme = document.querySelector(".theme-card.selected")?.dataset.theme || "chalk_board";
   const mascotEnabled = document.getElementById("mascot-enabled").checked;
+  const autoCritique = document.getElementById("auto-critique").checked;
   try {
     const result = await window.pywebview.api.start_pipeline_from_script(
-      editedScenes, voiceProfile, exportH5p, theme, mascotEnabled
+      editedScenes, voiceProfile, exportH5p, theme, mascotEnabled, autoCritique
     );
     lastVideoPath = result.video_path;
     lastVideoUrl = result.video_url;

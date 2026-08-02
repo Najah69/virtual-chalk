@@ -29,7 +29,10 @@ exe = EXE(
     exclude_binaries=True,
     name="virtual-chalk",
     console=False,
-    icon=None,
+    # Icone de l'exe (barre des taches, raccourcis, association .vchalk —
+    # voir build/installer.iss) — derivee de icone-Virtual-Chalk-3.png,
+    # voir resources/branding/app_icon.ico (multi-resolution 16..256px).
+    icon="../resources/branding/app_icon.ico",
 )
 
 coll = COLLECT(

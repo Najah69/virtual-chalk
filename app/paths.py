@@ -23,3 +23,4 @@ def base_dir() -> Path:
 
 UI_DIR = base_dir() / "ui"
 APP_DIR = base_dir() / "app"
+RESOURCES_DIR = base_dir() / "resources"

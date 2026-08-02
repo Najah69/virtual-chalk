@@ -275,9 +275,10 @@
   // --- État d'interaction souris -------------------------------------------
 
   let dragState = null; // { mode: "move" | "resize", stroke, corner, startX, startY, orig }
-  let placingKind = null; // "text" | "image" | "icon" en attente de placement (voir startPlacingNew*)
+  let placingKind = null; // "text" | "image" | "icon" | "library" en attente de placement (voir startPlacingNew*)
   let pendingImageData = null;
   let pendingIconName = null;
+  let pendingLibraryAsset = null; // Tâche 6 : LibraryAsset en attente de placement
 
   function selectStroke(stroke) {
     selectedStroke = stroke;
@@ -313,6 +314,15 @@
       const stroke = _addIconStrokeAt(pt.x, pt.y, pendingIconName);
       placingKind = null;
       pendingIconName = null;
+      canvas.style.cursor = "default";
+      selectStroke(stroke);
+      notifySceneChanged();
+      return;
+    }
+    if (placingKind === "library") {
+      const stroke = _addLibraryAssetStrokeAt(pt.x, pt.y, pendingLibraryAsset);
+      placingKind = null;
+      pendingLibraryAsset = null;
       canvas.style.cursor = "default";
       selectStroke(stroke);
       notifySceneChanged();
@@ -538,6 +548,30 @@
     return stroke;
   }
 
+  // Doit rester cohérent avec ICON_SIZE : même taille par défaut qu'un
+  // icône (220px de large), pas de raison qu'un élément de bibliothèque
+  // apparaisse visuellement plus petit/grand. La hauteur suit l'aspect
+  // natif de l'élément enregistré (voir asset.native_height), jamais
+  // déformée. Contrairement à icon/image/diagram, "shape" n'est PAS
+  // redimensionnable après coup (voir isResizable ci-dessous — pas de
+  // notion de "largeur" séparée du tracé lui-même pour ce kind) : cette
+  // taille de placement est donc définitive, même limitation que pour
+  // n'importe quel autre stroke "shape" déjà vectorisé (diagramme généré
+  // par le LLM par exemple), pas une régression introduite ici.
+  const LIBRARY_DEFAULT_WIDTH = 220.0;
+
+  function _addLibraryAssetStrokeAt(x, y, asset) {
+    const scale = LIBRARY_DEFAULT_WIDTH / window.Library.LIBRARY_NATIVE_WIDTH;
+    const points = window.Library.assetToPoints(asset, x, y, LIBRARY_DEFAULT_WIDTH);
+    const stroke = {
+      points, color: asset.color, width: LIBRARY_DEFAULT_WIDTH,
+      kind: asset.kind, text: "", height: asset.native_height * scale,
+      start_sec: 0.0, end_sec: 0.0, image_data: "",
+    };
+    editorScene.strokes.push(stroke);
+    return stroke;
+  }
+
   function deleteSelected() {
     if (!selectedStroke || !editorScene) return;
     const idx = editorScene.strokes.indexOf(selectedStroke);
@@ -605,10 +639,18 @@
       pendingIconName = iconName;
       canvas.style.cursor = "crosshair";
     },
+    // Bibliothèque personnelle (Tâche 6, voir editor.js/library.js) : asset
+    // = un LibraryAsset renvoyé par Api.list_library_assets.
+    startPlacingNewLibraryAsset(asset) {
+      placingKind = "library";
+      pendingLibraryAsset = asset;
+      canvas.style.cursor = "crosshair";
+    },
     cancelPlacing() {
       placingKind = null;
       pendingImageData = null;
       pendingIconName = null;
+      pendingLibraryAsset = null;
       canvas.style.cursor = "default";
     },
 
@@ -625,6 +667,44 @@
       const stroke = { points, color: (theme.palette && theme.palette[0]) || "#333", width: size, kind: "icon", text: iconName, _lastDrawnCount: 0 };
       thumbCtx.clearRect(0, 0, targetCanvas.width, targetCanvas.height);
       window.TOOLS[theme.tool](thumbCtx, stroke, 1);
+    },
+
+    // Bibliothèque personnelle (Tâche 6) : même principe que
+    // drawIconThumbnail, mais à partir d'un LibraryAsset (points déjà
+    // normalisés, voir library.js::assetToPoints) plutôt qu'un nom
+    // d'icône du socle fixe. Centré verticalement en tenant compte de
+    // l'aspect natif réel (asset.native_height, peut différer de la
+    // largeur — un tracé n'est pas forcément carré comme une icône).
+    drawLibraryAssetThumbnail(targetCanvas, asset, themeId) {
+      const thumbCtx = targetCanvas.getContext("2d");
+      const theme = window.getTheme(themeId);
+      const size = Math.min(targetCanvas.width, targetCanvas.height) * 0.7;
+      const actualHeight = size * (asset.native_height / window.Library.LIBRARY_NATIVE_WIDTH);
+      const x = (targetCanvas.width - size) / 2;
+      const y = (targetCanvas.height - actualHeight) / 2;
+      const points = window.Library.assetToPoints(asset, x, y, size);
+      const stroke = { points, color: asset.color || (theme.palette && theme.palette[0]) || "#333", width: size, kind: asset.kind, _lastDrawnCount: 0 };
+      thumbCtx.clearRect(0, 0, targetCanvas.width, targetCanvas.height);
+      window.TOOLS[theme.tool](thumbCtx, stroke, 1);
+    },
+
+    // Bibliothèque personnelle (Tâche 6) : renvoie {kind, color, points,
+    // bbox} pour le stroke actuellement sélectionné, ou null s'il n'est
+    // pas éligible (voir LIBRARY_ELIGIBLE_KINDS côté Python — seul "shape"
+    // est accepté, un texte/icône/image a une ancre séparée de son
+    // contenu dessiné, incompatible avec ce stockage normalisé). bbox
+    // recalculée ici (pas stroke.width/height, pas fiables pour "shape",
+    // voir boundingBoxOf) pour que la normalisation côté Python parte
+    // d'une boîte englobante réelle du tracé.
+    getSelectedStrokeForLibrary() {
+      if (!selectedStroke || selectedStroke.kind !== "shape") return null;
+      const box = boundingBoxOf(selectedStroke);
+      return {
+        kind: selectedStroke.kind,
+        color: selectedStroke.color,
+        points: selectedStroke.points.map((p) => ({ x: p.x, y: p.y, penUp: !!p.penUp })),
+        bbox: { x: box.x, y: box.y, w: box.w, h: box.h },
+      };
     },
 
     // Notifie le changement (texte édité, couleur changée...) et

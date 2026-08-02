@@ -14,6 +14,7 @@ from app.edit.nl_commands import _recolor_strokes_for_theme, apply_nl_edit_comma
 from app.h5p.packager import build_h5p
 from app.i18n.translate import translate_project
 from app.ingestion.text_normalizer import normalize_source
+from app.library.asset_library import add_asset, load_library, remove_asset
 from app.local_media_server import serve as serve_media
 from app.llm.deepseek import DeepSeekProvider
 from app.llm.gemini import GeminiProvider
@@ -111,6 +112,31 @@ class Api:
         encoded = base64.b64encode(path.read_bytes()).decode("ascii")
         return {"name": path.name, "data_uri": f"data:{mime_type};base64,{encoded}"}
 
+    def list_library_assets(self) -> list[dict[str, Any]]:
+        """Bibliothèque personnelle GLOBALE (app/library/asset_library.py,
+        Tâche 6) — pas embarquée par projet, donc jamais vidée/limitée par
+        `_current_project` : disponible même sans projet ouvert."""
+        return [a.to_dict() for a in load_library()]
+
+    def save_library_asset(self, name: str, kind: str, color: str,
+                            points: list[dict[str, Any]], bbox: dict[str, float]) -> dict[str, Any]:
+        """Enregistre l'élément actuellement sélectionné dans l'éditeur
+        (bouton "Enregistrer dans ma bibliothèque", voir ui/editor/editor.js)
+        dans la bibliothèque personnelle. `points`/`bbox` en espace canvas
+        réel du projet courant (pixels du tableau) — normalisés ici avant
+        stockage (voir asset_library.normalize_points) pour rester
+        replaçables à n'importe quelle taille, y compris dans un futur
+        projet d'une autre orientation. Lève ValueError si `kind` n'est pas
+        éligible (voir LIBRARY_ELIGIBLE_KINDS) plutôt que d'enregistrer
+        silencieusement un élément qui ne pourrait pas être replacé
+        correctement (icône/texte/image ont une ancre séparée de leur
+        contenu dessiné, incompatible avec ce stockage — voir le
+        commentaire sur LIBRARY_ELIGIBLE_KINDS)."""
+        return add_asset(name, kind, color, points, bbox).to_dict()
+
+    def delete_library_asset(self, asset_id: str) -> None:
+        remove_asset(asset_id)
+
     def get_settings(self) -> dict[str, Any]:
         from dataclasses import asdict
         return asdict(self.settings)
@@ -189,7 +215,7 @@ class Api:
 
     def start_pipeline_from_script(self, edited_scenes: list[dict[str, Any]], voice_profile_name: str,
                                     export_h5p: bool, theme: str = "chalk_board",
-                                    mascot_enabled: bool = False) -> dict[str, Any]:
+                                    mascot_enabled: bool = False, auto_critique: bool = False) -> dict[str, Any]:
         """Termine la génération à partir du script produit par
         generate_script, en réappliquant les éditions textuelles faites à
         l'étape 2 (voix off par scène — `edited_scenes` : liste de
@@ -226,7 +252,7 @@ class Api:
 
         request = GenerationRequest(
             source_text="", voice_profile=profile, theme=theme,
-            export_h5p=export_h5p, mascot_enabled=mascot_enabled,
+            export_h5p=export_h5p, mascot_enabled=mascot_enabled, auto_critique=auto_critique,
         )
         result = pipeline.finish_generation(project, request, on_progress=on_progress)
         self._current_project = result.project
