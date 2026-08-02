@@ -2,7 +2,7 @@
 ; Compiler avec ISCC.exe une fois le build PyInstaller terminé (dist/virtual-chalk/).
 
 #define MyAppName "Virtual-Chalk"
-#define MyAppVersion "0.4.0"
+#define MyAppVersion "0.5.0"
 #define MyAppExeName "virtual-chalk.exe"
 
 [Setup]

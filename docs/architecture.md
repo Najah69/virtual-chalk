@@ -1324,9 +1324,9 @@ thème par tableau blanc feutres", "supprime la dernière scène si elle ne
 contient qu'une conclusion répétitive"...). `app/edit/nl_commands.py`
 traduit cette instruction en une liste d'actions JSON structurées via **un
 seul appel LLM** (`EDIT_SYSTEM_PROMPT`, `app/edit/prompts.py`), à partir
-d'un vocabulaire fixe de 6 actions primitives (`update_scene_duration`,
+d'un vocabulaire fixe de 7 actions primitives (`update_scene_duration`,
 `set_theme`, `delete_scene`, `move_scene`, `insert_scene`,
-`replace_scene_content`) — jamais de régénération complète du script, pas
+`replace_scene_content`, `add_visual_elements`) — jamais de régénération complète du script, pas
 de deuxième appel LLM même pour `insert_scene` (le contenu de la nouvelle
 scène est généré dans ce même appel de traduction).
 
@@ -1383,6 +1383,22 @@ ni de vidéo re-encodée. Deux causes distinctes :
    maintenant `EditCommandError` (donc journalisée et ignorée, comme tout
    autre échec d'action individuelle) si aucun des deux champs n'est
    présent.
+
+**Piège rencontré (limite architecturale, découverte en corrigeant le bug
+ci-dessus)** : une fois les deux bugs corrigés, la MÊME commande
+("dessine une molécule de sucre + CO2" sur une scène qui a déjà du
+contenu) se traduisait par `{"actions": []}` — "Rien à faire : instruction
+non comprise ou sans effet". Cause : `build_scene_context` ne transmet au
+LLM qu'un extrait de la voix off, jamais les `visual_elements` actuels
+d'une scène ; or `replace_scene_content` REMPLACE tout le contenu visuel.
+Le LLM, suivant sa propre consigne de ne jamais inventer une action
+approximative, refuse à raison plutôt que de risquer d'effacer un contenu
+qu'il ne peut pas voir. Corrigé en ajoutant une 7ᵉ action,
+`add_visual_elements` (`scene_index`, `visual_elements`) : AJOUTE aux
+strokes déjà présents (`scene.strokes.extend(...)`) sans y toucher — le
+prompt indique désormais explicitement au LLM de préférer cette action à
+`replace_scene_content` dès que l'instruction demande d'ajouter quelque
+chose plutôt que de réécrire toute la scène.
 
 **Journal des commandes** — le seul retour visible après une commande
 était une ligne de statut éphémère (`#nl-command-status`), écrasée par la

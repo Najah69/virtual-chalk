@@ -167,6 +167,21 @@ def _apply_replace_scene_content(project: Project, action: dict, result: EditRes
     result.changed_scene_ids.append(scene.scene_id)
 
 
+def _apply_add_visual_elements(project: Project, action: dict, result: EditResult) -> None:
+    """Contrairement à replace_scene_content (remplacement intégral),
+    AJOUTE aux strokes déjà présents dans la scène — c'est l'action que le
+    LLM doit choisir pour "ajoute/dessine X sur la scène Y" puisqu'il ne
+    voit jamais le contenu visuel actuel d'une scène (voir
+    build_scene_context) et ne peut donc pas le reconstruire fidèlement
+    dans un replace_scene_content sans risquer de tout écraser."""
+    scene = project.scenes[_resolve_index(project, int(action["scene_index"]))]
+    visual_elements = action.get("visual_elements") or []
+    if not visual_elements:
+        raise EditCommandError(f"add_visual_elements sans visual_elements : {action!r}")
+    scene.strokes.extend(strokes_from_visual_elements(visual_elements, project.theme, *project.canvas_size))
+    result.changed_scene_ids.append(scene.scene_id)
+
+
 def _apply_toggle_mascot(project: Project, action: dict, result: EditResult) -> None:
     enabled = bool(action["enabled"])
     if enabled == project.mascot_enabled:
@@ -186,6 +201,7 @@ _ACTION_HANDLERS = {
     "move_scene": _apply_move_scene,
     "insert_scene": _apply_insert_scene,
     "replace_scene_content": _apply_replace_scene_content,
+    "add_visual_elements": _apply_add_visual_elements,
     "toggle_mascot": _apply_toggle_mascot,
 }
 

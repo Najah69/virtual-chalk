@@ -14,6 +14,16 @@ disque. Deux causes distinctes, corrigées ensemble :
    dans l'action produite par le LLM — un no-op se faisait donc passer pour
    un succès.
 
+Une fois ces deux bugs corrigés, un TROISIÈME problème est apparu en
+pratique : le LLM refusait purement et simplement la commande ("Rien à
+faire") sur une scène qui avait déjà du contenu, car replace_scene_content
+REMPLACE tout le contenu visuel de la scène et le LLM ne voit jamais ce
+contenu actuel (build_scene_context ne transmet qu'un extrait de la voix
+off) — il ne pouvait donc pas l'utiliser sans risquer d'effacer le reste.
+Voir test_apply_edit_command_add_visual_elements_vectorizes_diagram_and_keeps_existing_content
+ci-dessous : la nouvelle action "add_visual_elements" (app/edit/nl_commands.py)
+ajoute sans remplacer.
+
 Pipeline entièrement simulé — aucun vrai appel LLM/TTS/ffmpeg/Gemini ici."""
 
 from __future__ import annotations
@@ -103,6 +113,36 @@ def test_apply_edit_command_calls_generate_diagrams_even_with_no_diagram_pending
     api.apply_edit_command("change de thème")
 
     assert fake_pipeline.generate_diagrams_calls == 1
+
+
+def test_apply_edit_command_add_visual_elements_vectorizes_diagram_and_keeps_existing_content(monkeypatch):
+    """Reproduit le scénario réel rapporté par l'utilisateur : une commande
+    "dessine la molécule de sucre + CO2" sur une scène qui a déjà du
+    contenu (titre + icônes) doit AJOUTER le diagramme, le vectoriser, et
+    NE PAS effacer ce qui était déjà là."""
+    scene = _scene()
+    scene.strokes = [Stroke(points=[Point(0, 0)], color="#fff", width=90.0, kind="text", text="La Photosynthèse")]
+    actions = {
+        "actions": [{
+            "action": "add_visual_elements",
+            "scene_index": 0,
+            "visual_elements": [
+                {"type": "diagram", "description": "molécule de sucre + CO2", "x": 50, "y": 55, "width": 35, "height": 35},
+            ],
+        }],
+    }
+    api, fake_pipeline = _make_api(monkeypatch, [scene], [json.dumps(actions)])
+
+    result = api.apply_edit_command("dessine la molécule de sucre + CO2")
+
+    assert result["error"] is None
+    assert fake_pipeline.generate_diagrams_calls == 1
+    assert fake_pipeline.render_calls == 1
+    updated = api._current_project.find_scene("scene-001")
+    assert len(updated.strokes) == 2
+    assert updated.strokes[0].text == "La Photosynthèse"
+    assert updated.strokes[1].kind == "shape"
+    assert len(updated.strokes[1].points) == 2
 
 
 def test_apply_edit_command_empty_replace_scene_content_is_skipped_not_a_false_success(monkeypatch):

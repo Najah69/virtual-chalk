@@ -22,11 +22,24 @@ actions, dans l'ordre où elles doivent s'appliquer) :
 - {{"action": "move_scene", "scene_index": <int>, "to_index": <int>}}
 - {{"action": "insert_scene", "before_index": <int>, "voice_over": "...", "visual_elements": [...]}}
 - {{"action": "replace_scene_content", "scene_index": <int>, "voice_over": "...", "visual_elements": [...]}}
+- {{"action": "add_visual_elements", "scene_index": <int>, "visual_elements": [...]}}
 - {{"action": "toggle_mascot", "enabled": <true|false>}}
 
-Pour "insert_scene" et "replace_scene_content", "visual_elements" suit
-EXACTEMENT le même format que la génération de script initiale (3 à 6
-éléments, x/y en pourcentage 0-100, espacés pour ne pas se chevaucher) :
+IMPORTANT — "replace_scene_content" vs "add_visual_elements" : tu ne vois
+PAS le contenu visuel actuel des scènes ci-dessous (seulement un extrait de
+la voix off). "replace_scene_content" REMPLACE TOUT le contenu visuel
+existant de la scène par ce que tu fournis dans "visual_elements" — donc
+si l'instruction demande d'AJOUTER quelque chose à une scène qui existe
+déjà (un schéma, une icône, un texte en plus...) sans qu'on te demande de
+réécrire toute la scène, utilise TOUJOURS "add_visual_elements" (qui
+ajoute aux éléments déjà présents, sans y toucher). Réserve
+"replace_scene_content" aux cas où l'instruction demande explicitement de
+réécrire/remplacer le contenu d'une scène.
+
+Pour "insert_scene", "replace_scene_content" et "add_visual_elements",
+"visual_elements" suit EXACTEMENT le même format que la génération de
+script initiale (3 à 6 éléments, x/y en pourcentage 0-100, espacés pour ne
+pas se chevaucher) :
   - texte : {{"type": "text", "content": "Mot ou courte phrase", "x": 50, "y": 30}}
   - icône (name dans cette liste exacte, par catégorie) :
 {ICON_LIST}

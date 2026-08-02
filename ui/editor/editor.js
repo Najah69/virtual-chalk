@@ -34,6 +34,8 @@ function describeAction(action) {
       return `Nouvelle scène insérée avant la position ${action.before_index}`;
     case "replace_scene_content":
       return `Contenu de la scène ${action.scene_index} remplacé`;
+    case "add_visual_elements":
+      return `${(action.visual_elements || []).length} élément(s) ajouté(s) à la scène ${action.scene_index}`;
     case "toggle_mascot":
       return action.enabled ? "Mascotte activée" : "Mascotte désactivée";
     default:

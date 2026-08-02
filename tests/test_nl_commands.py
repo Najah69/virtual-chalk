@@ -8,6 +8,7 @@ import json
 from app.edit.nl_commands import (
     EditCommandError,
     EditResult,
+    _apply_add_visual_elements,
     _apply_replace_scene_content,
     _recolor_strokes_for_theme,
     apply_nl_edit_command,
@@ -160,6 +161,55 @@ def test_apply_replace_scene_content_with_visual_elements_marks_scene_changed():
 
     assert result.changed_scene_ids == ["s0"]
     assert project.scenes[0].strokes[0].kind == "diagram"
+
+
+def test_apply_add_visual_elements_appends_without_touching_existing_strokes():
+    """Corrige le blocage réel rencontré après coup : replace_scene_content
+    refusait à raison de "deviner" le contenu existant d'une scène pour y
+    ajouter un schéma -- add_visual_elements ajoute sans y toucher."""
+    project = _make_project()
+    project.scenes[0].strokes = [Stroke(points=[Point(0, 0)], color="#fff", width=10.0, kind="text", text="Déjà là")]
+    result = EditResult(project=project)
+    action = {
+        "scene_index": 0,
+        "visual_elements": [{"type": "diagram", "description": "molécule", "x": 50, "y": 55, "width": 35, "height": 35}],
+    }
+
+    _apply_add_visual_elements(project, action, result)
+
+    assert result.changed_scene_ids == ["s0"]
+    assert len(project.scenes[0].strokes) == 2
+    assert project.scenes[0].strokes[0].text == "Déjà là"
+    assert project.scenes[0].strokes[1].kind == "diagram"
+
+
+def test_apply_add_visual_elements_without_elements_raises():
+    project = _make_project()
+    result = EditResult(project=project)
+    try:
+        _apply_add_visual_elements(project, {"scene_index": 0}, result)
+        raise AssertionError("expected EditCommandError")
+    except EditCommandError:
+        pass
+    assert result.changed_scene_ids == []
+
+
+def test_apply_nl_edit_command_add_visual_elements_end_to_end():
+    project = _make_project()
+    actions = {
+        "actions": [{
+            "action": "add_visual_elements",
+            "scene_index": 1,
+            "visual_elements": [{"type": "icon", "name": "sun", "x": 50, "y": 30}],
+        }],
+    }
+    llm = FakeLLMProvider([json.dumps(actions)])
+
+    result = apply_nl_edit_command(project, "ajoute un soleil sur la scène 2", llm)
+
+    assert result.error is None
+    assert result.changed_scene_ids == ["s1"]
+    assert project.scenes[1].strokes[0].kind == "icon"
 
 
 def test_apply_nl_edit_command_update_scene_duration_uses_the_shared_helper():
