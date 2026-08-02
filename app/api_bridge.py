@@ -609,6 +609,18 @@ class Api:
                 "error": result.error,
             }
 
+        # Une action "insert_scene"/"replace_scene_content" peut avoir posé
+        # des strokes kind="diagram" (description en langage naturel, pas
+        # encore vectorisée) — sans cet appel elles restaient un simple
+        # point d'ancrage invisible au rendu (bug rencontré en pratique :
+        # "dessine la molécule Sucre+CO2" semblait ne rien faire). Même
+        # mécanisme que la génération initiale (Pipeline.finish_generation),
+        # volontairement absent de nl_commands.py (module pur, sans appel
+        # réseau) — c'est ici, côté orchestration, qu'il doit avoir lieu.
+        # Sans coût si aucun diagramme n'est en attente (generate_diagrams
+        # retourne immédiatement dans ce cas).
+        pipeline.generate_diagrams(self._current_project)
+
         voice_profile = self._current_voice_profile or _DEFAULT_VOICE_PROFILE
         for scene_id in result.voice_changed_scene_ids:
             # Le scene_id peut ne plus exister si une action ulterieure de

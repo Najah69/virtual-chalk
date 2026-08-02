@@ -1359,6 +1359,31 @@ sous WebView2 (`ERR_FILE_NOT_FOUND`) — corrigé en passant ce chemin par le
 pont JS↔Python existant (`Api.get_current_project_path()`, lu par
 `editor.js` une fois `pywebviewready` déclenché) plutôt que par l'URL.
 
+**Piège rencontré (bug, retour utilisateur)** : une commande du type
+"dessine la molécule de sucre + CO2" affichait "Modifications appliquées et
+scènes concernées re-rendues" mais ne produisait aucun changement visible
+ni de vidéo re-encodée. Deux causes distinctes :
+1. `strokes_from_visual_elements` transforme un élément `"type": "diagram"`
+   en `Stroke(kind="diagram", points=[ancre])` — un simple point
+   d'ancrage, invisible au rendu tant qu'il n'est pas vectorisé par
+   `Pipeline.generate_diagrams` (appel Gemini, voir plus haut "Génération
+   des diagrammes"). Ce vectorisation n'a lieu QUE dans
+   `Pipeline.finish_generation` (génération initiale) — `Api.apply_edit_command`
+   ne l'appelait jamais, donc un diagramme ajouté par édition NL restait
+   pour toujours un point invisible. Corrigé en appelant
+   `pipeline.generate_diagrams(project)` dans `apply_edit_command`, juste
+   après résolution des actions et avant le rendu — sans coût quand rien
+   n'est en attente (`generate_diagrams` retourne immédiatement dans ce
+   cas), donc appelé sans condition à chaque commande plutôt que de
+   détecter nous-mêmes si une action a posé un diagramme.
+2. `_apply_replace_scene_content` ajoutait systématiquement l'id de la
+   scène à `changed_scene_ids`, même quand l'action du LLM ne portait ni
+   `voice_over` ni `visual_elements` (LLM ayant mal compris la commande) —
+   un no-op se faisait donc passer pour un succès. Corrigé : l'action lève
+   maintenant `EditCommandError` (donc journalisée et ignorée, comme tout
+   autre échec d'action individuelle) si aucun des deux champs n'est
+   présent.
+
 **Journal des commandes** — le seul retour visible après une commande
 était une ligne de statut éphémère (`#nl-command-status`), écrasée par la
 commande suivante : impossible de vérifier après coup ce qu'une

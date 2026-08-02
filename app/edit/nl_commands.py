@@ -149,11 +149,21 @@ def _apply_insert_scene(project: Project, action: dict, result: EditResult) -> N
 
 def _apply_replace_scene_content(project: Project, action: dict, result: EditResult) -> None:
     scene = project.scenes[_resolve_index(project, int(action["scene_index"]))]
+    changed = False
     if "voice_over" in action:
         scene.voice_over = str(action["voice_over"]).strip()
         result.voice_changed_scene_ids.append(scene.scene_id)
+        changed = True
     if "visual_elements" in action:
         scene.strokes = strokes_from_visual_elements(action["visual_elements"], project.theme, *project.canvas_size)
+        changed = True
+    if not changed:
+        # Ni voice_over ni visual_elements : le LLM a renvoyé une action
+        # vide — sans ce garde-fou elle était acceptée en silence et
+        # remontée comme un succès (scène ajoutée à changed_scene_ids)
+        # alors que rien n'avait changé. Rencontré en pratique : "dessine
+        # la molécule Sucre+CO2" a produit ce cas.
+        raise EditCommandError(f"replace_scene_content sans voice_over ni visual_elements : {action!r}")
     result.changed_scene_ids.append(scene.scene_id)
 
 

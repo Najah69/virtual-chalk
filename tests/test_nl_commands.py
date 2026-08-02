@@ -5,7 +5,13 @@ from __future__ import annotations
 
 import json
 
-from app.edit.nl_commands import _recolor_strokes_for_theme, apply_nl_edit_command
+from app.edit.nl_commands import (
+    EditCommandError,
+    EditResult,
+    _apply_replace_scene_content,
+    _recolor_strokes_for_theme,
+    apply_nl_edit_command,
+)
 from app.render.theme_registry import text_color_for_theme
 from app.scenes.schema import Point, Project, Scene, Stroke
 from tests.conftest import FakeLLMProvider
@@ -113,6 +119,47 @@ def test_apply_nl_edit_command_update_scene_duration_truncates_and_reports_voice
     assert len(project.scenes[0].voice_over) < len("Une phrase assez longue pour dépasser le budget alloué à la scène.")
     assert result.changed_scene_ids == ["s0"]
     assert result.voice_changed_scene_ids == ["s0"]
+
+
+def test_apply_replace_scene_content_without_voice_over_or_visual_elements_raises():
+    """Régression : le LLM peut renvoyer une action replace_scene_content
+    ne portant ni voice_over ni visual_elements (ex: mauvaise compréhension
+    de la commande "dessine la molécule Sucre+CO2") -- doit être traitée
+    comme invalide (EditCommandError), pas comme un succès silencieux."""
+    project = _make_project()
+    result = EditResult(project=project)
+    try:
+        _apply_replace_scene_content(project, {"scene_index": 0}, result)
+        raise AssertionError("expected EditCommandError")
+    except EditCommandError:
+        pass
+    assert result.changed_scene_ids == []
+
+
+def test_apply_nl_edit_command_replace_scene_content_noop_action_is_skipped_not_fatal():
+    project = _make_project()
+    actions = {"actions": [{"action": "replace_scene_content", "scene_index": 0}]}
+    llm = FakeLLMProvider([json.dumps(actions)])
+
+    result = apply_nl_edit_command(project, "dessine quelque chose", llm)
+
+    assert result.error is None
+    assert result.changed_scene_ids == []
+    assert len(result.skipped_actions) == 1
+
+
+def test_apply_replace_scene_content_with_visual_elements_marks_scene_changed():
+    project = _make_project()
+    result = EditResult(project=project)
+    action = {
+        "scene_index": 0,
+        "visual_elements": [{"type": "diagram", "description": "molécule", "x": 10, "y": 10, "width": 5, "height": 5}],
+    }
+
+    _apply_replace_scene_content(project, action, result)
+
+    assert result.changed_scene_ids == ["s0"]
+    assert project.scenes[0].strokes[0].kind == "diagram"
 
 
 def test_apply_nl_edit_command_update_scene_duration_uses_the_shared_helper():
