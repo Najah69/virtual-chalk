@@ -66,12 +66,17 @@ function renderJournal() {
     .join("");
 }
 
+// Numérotée "Scène N" (position dans currentProject.scenes, même
+// convention que les blocs de la timeline, voir timeliner.js) plutôt que
+// le scene_id technique ("scene-001") — Tâche 5 (UX enseignants non-pro) :
+// un identifiant interne n'a pas de sens pour quelqu'un qui n'a jamais lu
+// le code, "Scène 1" si.
 function renderSceneList() {
   const list = document.getElementById("scene-list");
   list.innerHTML = currentProject.scenes
     .map(
-      (s) =>
-        `<div class="scene-item ${s.scene_id === selectedSceneId ? "selected" : ""}" data-id="${s.scene_id}">${s.scene_id}</div>`
+      (s, i) =>
+        `<div class="scene-item ${s.scene_id === selectedSceneId ? "selected" : ""}" data-id="${s.scene_id}">Scène ${i + 1}</div>`
     )
     .join("");
   list.querySelectorAll(".scene-item").forEach((el) => {
@@ -92,6 +97,73 @@ function selectScene(sceneId) {
   renderSceneList();
   window.EditorCanvas.loadScene(scene, currentProject.theme, currentProject.mobile_layout);
   showElementProperties(null);
+  refreshTimeliner();
+}
+
+// Vue d'ensemble du montage sous le canvas (voir timeliner.js) — rappelée
+// après tout ce qui peut changer la durée d'une scène (voix off
+// resynthétisée), la structure du projet (commande NL) ou l'ordre/la durée
+// via glisser (applyTimelineChange ci-dessous), en plus de chaque
+// changement de sélection dans selectScene ci-dessus.
+function refreshTimeliner() {
+  if (!currentProject) return;
+  const container = document.getElementById("timeliner-container");
+  window.Timeliner.render(container, currentProject, selectedSceneId, {
+    onSceneClick: selectScene,
+    onTimelineChange: (payload) => {
+      if (!timelinerBusy) applyTimelineChange(payload);
+    },
+  });
+}
+
+// timelinerBusy : un seul Api.update_timeline en vol à la fois — un
+// deuxième glisser pendant qu'une resynthèse/un re-rendu est en cours
+// enverrait un TimelineJSON basé sur un `currentProject` déjà périmé (voir
+// applyTimelineChange, qui remplace currentProject une fois la réponse
+// arrivée). #timeliner-container.busy (CSS) bloque aussi les événements
+// souris pendant ce délai, en plus de ce garde-fou côté JS.
+let timelinerBusy = false;
+
+// Persiste un glisser (réordonnancement ou raccourcissement, voir
+// timeliner.js) via Api.update_timeline (Tâche 3) — même schéma que
+// saveCurrentSceneEdits + rerender_scene : l'édition locale (déjà visible
+// à l'écran de façon optimiste pendant le glisser) n'est réellement actée
+// côté projet qu'une fois la resynthèse/le re-rendu terminés côté Python.
+async function applyTimelineChange(timelinePayload) {
+  const status = document.getElementById("timeliner-status");
+  const container = document.getElementById("timeliner-container");
+  timelinerBusy = true;
+  container.classList.add("busy");
+  status.className = "timeliner-status";
+  status.textContent = "Mise à jour du montage en cours (resynthèse/re-rendu si nécessaire)...";
+  try {
+    const result = await window.pywebview.api.update_timeline(timelinePayload);
+    currentProject = result.project;
+    status.textContent = result.changed_scene_ids.length || result.reordered
+      ? "Montage mis à jour."
+      : "";
+    renderSceneList();
+    // selectScene rafraîchit aussi le canvas (si la durée/le contenu de la
+    // scène sélectionnée a changé) et la timeliner en une fois ; si la
+    // scène sélectionnée n'existe plus (ne devrait pas arriver ici, aucune
+    // action de update_timeline ne supprime de scène, mais reste défensif
+    // comme le reste de l'éditeur), on retombe sur un simple rafraîchissement.
+    if (selectedSceneId && currentProject.scenes.some((s) => s.scene_id === selectedSceneId)) {
+      selectScene(selectedSceneId);
+    } else {
+      refreshTimeliner();
+    }
+  } catch (err) {
+    status.className = "timeliner-status error";
+    status.textContent = `Erreur : ${err}`;
+    // currentProject n'a pas bougé (l'échec est survenu côté Python avant
+    // toute réponse) : un simple rafraîchissement suffit à annuler l'état
+    // optimiste affiché pendant le glisser.
+    refreshTimeliner();
+  } finally {
+    timelinerBusy = false;
+    container.classList.remove("busy");
+  }
 }
 
 // --- Panneau de propriétés contextuel (élément sélectionné sur le canvas) --
@@ -183,6 +255,7 @@ document.getElementById("btn-save-voice-over").addEventListener("click", async (
     document.getElementById("prop-duration-display").textContent = scene.duration_sec.toFixed(1);
     status.textContent = "Voix mise à jour — pensez à re-render la scène pour voir/entendre le résultat.";
     changedSinceRerender = true;
+    refreshTimeliner();
   } catch (err) {
     status.textContent = `Erreur : ${err}`;
   }
@@ -385,6 +458,11 @@ document.getElementById("btn-nl-apply").addEventListener("click", async () => {
     renderSceneList();
     if (currentProject.scenes.length) {
       selectScene(stillExists ? selectedSceneId : currentProject.scenes[0].scene_id);
+    } else {
+      // Toutes les scenes ont ete supprimees par la commande : selectScene
+      // (qui rafraichit aussi la timeline) n'est jamais appelee dans ce cas.
+      selectedSceneId = null;
+      refreshTimeliner();
     }
   } catch (err) {
     const summary = `Erreur : ${err}`;

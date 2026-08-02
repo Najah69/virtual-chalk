@@ -23,6 +23,7 @@ from app.paths import UI_DIR
 from app.pipeline import GenerationRequest, Pipeline
 from app.scenes.project_file import PROJECT_FILE_EXTENSION, load_project_file, save_project_file
 from app.scenes.schema import Exercise, Point, Stroke
+from app.scenes.timeline import timeline_to_project
 from app.settings import Settings, get_api_key
 from app.tts.base import TTSProvider, VoiceProfile
 from app.tts.gemini_tts import GeminiTTSProvider
@@ -408,6 +409,47 @@ class Api:
             )
             for s in strokes
         ]
+
+    def update_timeline(self, timeline: dict[str, Any]) -> dict[str, Any]:
+        """Persiste les éditions faites sur la bande timeline de l'éditeur
+        (ui/editor/timeliner.js, Tâche 3 du blueprint Timeline & Anime.js —
+        glisser pour réordonner/raccourcir une scène). Délègue toute la
+        décision de CE QUI a changé à timeline_to_project (app/scenes/
+        timeline.py, Tâche 1) et se contente d'orchestrer les effets de bord
+        qu'elle ne fait jamais elle-même — même séparation que
+        apply_edit_command pour une commande NL : resynthèse vocale
+        seulement pour les scènes que voice_changed_scene_ids désigne, puis
+        un seul appel à Pipeline.render (qui retrouve tout seul quoi
+        re-rendre via le hash de contenu, voir app/render/partial_render.py)
+        si quoi que ce soit a changé — y compris un simple réordonnancement
+        sans aucun contenu modifié (result.reordered), qui ne touche le hash
+        d'aucune scène mais doit quand même redéclencher la concaténation
+        finale pour refléter le nouvel ordre."""
+        if not self._current_project or not self._current_project_dir:
+            raise RuntimeError("Aucun projet à éditer")
+
+        result = timeline_to_project(timeline, self._current_project)
+        self._current_project = result.project
+
+        pipeline = self._build_pipeline(self._current_voice_profile)
+        voice_profile = self._current_voice_profile or _DEFAULT_VOICE_PROFILE
+        for scene_id in result.voice_changed_scene_ids:
+            scene = self._current_project.find_scene(scene_id)
+            if scene is None:
+                continue
+            pipeline.resynthesize_scene(scene, voice_profile)
+
+        if result.changed_scene_ids or result.reordered:
+            self._current_video_path = pipeline.render(self._current_project, self._current_project_dir)
+
+        save_project_file(self._current_project, self._current_project_save_path())
+
+        return {
+            "project": self._current_project.to_dict(),
+            "video_url": serve_media(self._current_video_path) if self._current_video_path else None,
+            "reordered": result.reordered,
+            "changed_scene_ids": result.changed_scene_ids,
+        }
 
     def insert_image(self, scene_id: str, image_data: str, x_pct: float, y_pct: float,
                       width_pct: float, height_pct: float) -> dict[str, Any]:

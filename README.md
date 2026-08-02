@@ -24,13 +24,20 @@ des correctifs — ce README couvre l'installation et l'utilisation, l'architect
   automatiquement par le LLM, avec résolution des chevauchements
 - Diagrammes générés à la demande (schéma → image → vectorisation en tracé) pour les concepts
   géométriques/structurels qu'aucune icône ne peut représenter
-- Mascotte animée optionnelle qui salue, pointe les éléments et accompagne la scène
+- Grammaire de mouvement pour les animations générées par le LLM (pluie qui tombe, orbites qui tournent...) —
+  le vocabulaire s'enrichit verbe par verbe, contrainte à un rendu déterministe (jamais de temps réel)
+- Mascotte animée optionnelle qui salue, pointe les éléments et accompagne la scène ; ses transitions
+  d'apparition/disparition et le fondu des images insérées suivent une courbe d'accélération naturelle
+  (Anime.js, utilisé uniquement comme bibliothèque d'easing pure)
 - Voix : voix Windows locale (SAPI, gratuite, hors-ligne) ou voix Gemini (cloud)
 
 **Édition post-génération**
 - Éditeur visuel WYSIWYG : glisser/redimensionner/ajouter/supprimer texte, icônes, images ; édition de texte
   en place ; bibliothèque d'icônes à vignettes ; lecteur vidéo intégré ; re-rendu ciblé par scène ou complet
   (cache par empreinte de contenu — ne ré-encode que ce qui a changé)
+- Bande de montage (timeline) sous le canvas : vue d'ensemble des scènes (durée relative, pistes
+  mascotte/image), glisser un bloc pour réordonner les scènes ou tirer son bord droit pour la raccourcir
+  (voix off retronquée et resynthétisée automatiquement)
 - Édition par commande en langage naturel ("raccourcis la scène 3 à 10s", "change le thème", "supprime la
   scène 2", "ajoute une mascotte"...)
 - Insertion d'images (bitmap/vecteur) directement sur le tableau

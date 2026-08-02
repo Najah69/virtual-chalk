@@ -45,6 +45,51 @@
     .nl-edit-journal .journal-summary.partial { color: #a06a00; }
     .nl-edit-journal .journal-summary.error { color: #b3261e; }
     .nl-edit-journal .journal-actions { margin: 2px 0 0 0; padding-left: 18px; color: #555; }
+
+    /* Bande "pellicule" (voir timeliner.js) : vue d'ensemble des scènes du
+       montage sous le canvas d'édition — Tâche 2 (affichage + clic pour
+       sélectionner), Tâche 3 (glisser pour réordonner/raccourcir) et
+       Tâche 5 (légende + repère visuel pensés pour un public non technique
+       — un professeur, pas un développeur). */
+    .timeliner-panel { border-top: 1px solid #e2e0da; padding: 10px 16px 14px; background: #fafaf7; }
+    .timeliner-panel-head { display: flex; align-items: baseline; justify-content: space-between; flex-wrap: wrap; gap: 4px 16px; margin-bottom: 8px; }
+    .timeliner-panel h4 { margin: 0; font-size: 12px; color: #888; text-transform: uppercase; letter-spacing: 0.04em; }
+    .timeliner-hint { font-size: 12px; color: #888; margin: 0; }
+    .timeliner-legend { display: flex; gap: 14px; font-size: 12px; color: #666; margin-bottom: 8px; }
+    .timeliner-legend span { display: inline-flex; align-items: center; gap: 5px; }
+    .timeliner-legend .swatch { width: 10px; height: 10px; border-radius: 2px; display: inline-block; }
+    .timeliner-track { display: flex; gap: 3px; height: 56px; }
+    #timeliner-container.busy { opacity: 0.6; pointer-events: none; }
+    .timeliner-status { font-size: 12px; color: #888; margin-top: 6px; min-height: 15px; }
+    .timeliner-status.error { color: #b3261e; }
+    .timeliner-scene {
+      position: relative; flex-basis: 0; min-width: 28px; background: var(--board-green);
+      border: 2px solid transparent; border-radius: 4px; cursor: grab; overflow: hidden;
+      display: flex; align-items: flex-start; justify-content: center;
+    }
+    .timeliner-scene:hover { border-color: #7fae97; }
+    .timeliner-scene.selected { border-color: #fff; box-shadow: 0 0 0 2px var(--board-green); }
+    .timeliner-scene.dragging { opacity: 0.55; cursor: grabbing; }
+    .timeliner-scene-label { color: #fff; font-size: 11px; font-weight: 600; margin-top: 4px; opacity: 0.85; pointer-events: none; }
+    .timeliner-events { position: absolute; left: 0; right: 0; bottom: 4px; height: 14px; }
+    .timeliner-tick { position: absolute; height: 5px; border-radius: 2px; }
+    .timeliner-tick-mascot { top: 0; }
+    .timeliner-tick-image { top: 7px; }
+    /* Petite "poignée" à trois traits, plutôt qu'une simple bande sans
+       repère visuel — indique qu'il y a quelque chose à saisir là, sans
+       dépendre d'un survol pour le découvrir. */
+    .timeliner-resize-handle {
+      position: absolute; top: 0; right: 0; bottom: 0; width: 10px; cursor: ew-resize;
+      background: rgba(255,255,255,0.08);
+      background-image: repeating-linear-gradient(to bottom, rgba(255,255,255,0.55) 0 2px, transparent 2px 6px);
+      background-position: center; background-repeat: repeat-y; background-size: 2px 6px;
+    }
+    .timeliner-resize-handle:hover { background-color: rgba(255,255,255,0.3); }
+    .timeliner-resize-tooltip {
+      position: absolute; bottom: 100%; right: 0; margin-bottom: 4px; background: #222; color: #fff;
+      font-size: 11px; padding: 2px 6px; border-radius: 3px; white-space: nowrap; pointer-events: none; z-index: 5;
+    }
+    .timeliner-empty { color: #999; font-style: italic; font-size: 13px; }
   </style>
 </head>
 <body>
@@ -95,6 +140,19 @@
     </div>
   </div>
 
+  <div class="timeliner-panel">
+    <div class="timeliner-panel-head">
+      <h4>Montage</h4>
+      <p class="timeliner-hint">Glissez un bloc pour changer l'ordre des scènes ; tirez son bord droit pour la raccourcir.</p>
+    </div>
+    <div class="timeliner-legend">
+      <span><i class="swatch" style="background:#6a94c7"></i>Mascotte</span>
+      <span><i class="swatch" style="background:#c9a15a"></i>Image</span>
+    </div>
+    <div id="timeliner-container"></div>
+    <div class="timeliner-status" id="timeliner-status"></div>
+  </div>
+
   <div class="nl-edit-bar">
     <div style="flex:1">
       <input type="text" id="nl-command-input" placeholder='Ex : "Raccourcis la scène 3 à 15 secondes" ou "Remplace le thème par tableau blanc feutres"' />
@@ -127,6 +185,7 @@
   <script src="../../app/render/web_template/icon_sprite.js"></script>
   <script src="../../app/render/web_template/animations.js"></script>
   <script src="editor_canvas.js"></script>
+  <script src="timeliner.js"></script>
   <script src="editor.js"></script>
 </body>
 </html>

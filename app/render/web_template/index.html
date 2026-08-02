@@ -23,6 +23,8 @@
   <script src="icon_paths.js"></script>
   <script src="icon_to_path.js"></script>
   <script src="icon_sprite.js"></script>
+  <script src="anime.min.js"></script>
+  <script src="motion_easing.js"></script>
   <script src="animations.js"></script>
   <script src="mascot.js"></script>
   <script>
@@ -123,11 +125,14 @@
           // Pas de tracé progressif possible pour un bitmap (contrairement
           // au texte/icônes) : simple fondu d'apparition (globalAlpha),
           // puis figé — comme les animations, jamais retouché une fois
-          // end_sec dépassé.
+          // end_sec dépassé. Courbe easeOutCubic (window.easedProgress,
+          // voir motion_easing.js) plutôt qu'un fondu linéaire — premier
+          // usage d'Anime.js, utilisé ici uniquement comme bibliothèque
+          // d'easing pur, jamais son moteur temps réel.
           if (stroke._frozen) continue;
           if (stroke._imageEl) {
             ctx.save();
-            ctx.globalAlpha = progress;
+            ctx.globalAlpha = window.easedProgress(progress, "easeOutCubic");
             ctx.drawImage(stroke._imageEl, stroke.points[0].x, stroke.points[0].y, stroke.width, stroke.height);
             ctx.restore();
           }

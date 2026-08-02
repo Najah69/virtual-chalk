@@ -1414,6 +1414,192 @@ apparaissait à tort dans `changed_scene_ids`). Corrigé en ne marquant
 actuel — même principe que la comparaison à tolérance déjà utilisée pour
 la durée (`_DURATION_EPSILON_SEC`).
 
+### Composant Timeliner (éditeur) — Tâche 2
+
+`ui/editor/timeliner.js` (`window.Timeliner`) : bande "pellicule" affichée
+sous le canvas de l'éditeur (`ui/editor/editor.html`, panneau
+`.timeliner-panel`) — un bloc par scène, largeur proportionnelle à sa
+durée (`flex-grow` = `duration_sec`, pas de calcul de pourcentage manuel),
+avec les événements mascotte/images superposés en petits traits colorés à
+l'intérieur de chaque bloc.
+
+- **Lecture seule pour l'instant** : cliquer un bloc sélectionne la scène
+  (réutilise `editor.js::selectScene`, donc synchronisé avec la liste de
+  scènes à gauche et le canvas) — réordonner/redimensionner par glisser
+  n'est pas câblé ici. Décision explicite : construire l'interaction de
+  glisser maintenant, sans persistance réelle derrière (Tâche 3, l'API
+  `Api.update_timeline`, n'existe pas encore), aurait donné une édition
+  qui semble fonctionner puis se perd silencieusement au prochain
+  re-rendu/rechargement — pire que ne pas l'avoir. Le glisser arrive avec
+  la Tâche 3, pour que les deux soient livrés ensemble.
+- **`projectToTimeline(project)` recalculée côté client**, volontairement
+  distincte de l'appel à `project_to_timeline` (Python, Tâche 1) plutôt
+  que d'ajouter un aller-retour réseau : `editor.js` garde déjà
+  `currentProject` à jour en mémoire après toute édition locale (voix off
+  resynthétisée, commande NL appliquée...), donc recalculer la vue
+  timeline à partir de cet état est instantané et ne peut pas se
+  désynchroniser — contrairement à un appel Python qui obligerait à
+  rafraîchir après chaque mutation locale pour rester exact. Les deux
+  implémentations restent volontairement simples (une somme cumulée de
+  durées + deux `map`), le risque de divergence est faible comparé au coût
+  d'un aller-retour à chaque frappe/sélection.
+- **`refreshTimeliner()`** appelée à chaque changement de sélection de
+  scène (couvre le chargement initial et un changement de scène), après
+  la sauvegarde de la voix off (la durée change), et après l'application
+  d'une commande NL (structure du projet potentiellement changée,
+  y compris le cas où toutes les scènes sont supprimées — `selectScene`
+  n'étant alors jamais rappelée, ce cas est traité explicitement).
+- Vérifié par un harnais pywebview réel (projet `.vchalk` à 8 scènes,
+  26 actions mascotte, 1 image) : nombre de blocs/tics conforme aux
+  données du projet, largeurs `flex-grow` conformes aux durées réelles,
+  clic sur un bloc met à jour la sélection dans le bandeau, la liste de
+  scènes ET le canvas en une seule fois — captures d'écran à l'appui.
+
+### Persistance du glisser — Tâche 3
+
+`Api.update_timeline(timeline)` (`app/api_bridge.py`) : orchestre les
+effets de bord que `timeline_to_project` (Tâche 1) ne fait jamais
+elle-même — même séparation que `apply_edit_command` pour une commande NL.
+Resynthétise UNIQUEMENT les scènes que `voice_changed_scene_ids` désigne,
+puis un seul appel à `Pipeline.render` (qui retrouve tout seul quoi
+re-rendre via le hash de contenu) si `changed_scene_ids` OU `reordered` est
+non-vide — un simple réordonnancement sans contenu modifié ne touche le
+hash d'aucune scène mais doit quand même redéclencher la concaténation
+finale pour refléter le nouvel ordre. Sauvegarde toujours le projet, même
+si rien n'a changé (round-trip sans édition, voir Tâche 1).
+
+`ui/editor/timeliner.js` gagne le glisser réel, câblé à cette API via
+`editor.js::applyTimelineChange` :
+
+- **Réordonner** : glisser un bloc — un seuil de 4px distingue un glisser
+  d'un simple clic (`dragState.dragging`, posé sur `mousedown`/`mousemove`/
+  `mouseup` au niveau module, même schéma que `editor_canvas.js::dragState`).
+  La position cible est recalculée à chaque `mousemove` à partir d'un ratio
+  px/seconde fixé au début du glisser (largeur de la piste ÷ durée totale
+  du montage) — pas de nouvelle mesure DOM à chaque frame. Le bloc déplacé
+  suit l'ordre recalculé (classe `.dragging`, opacité réduite) ; au relâché,
+  si l'ordre a réellement changé, le nouveau `TimelineJSON` est envoyé à
+  `Api.update_timeline`.
+- **Raccourcir** : glisser la poignée à droite d'un bloc (`.timeliner-
+  resize-handle`) — ratio px/seconde propre à CE bloc (sa largeur réelle ÷
+  sa durée), affichage live de la durée cible dans une bulle
+  (`.timeliner-resize-tooltip`). En dessous de 0.1s de delta, traité comme
+  un geste accidentel et annulé sans appel API.
+- **Rallonger explicitement bloqué** (`Math.min(originalDuration, ...)`
+  dans `handleResizeMove`) : `truncate_voice_over_to_duration` (Tâche 1) ne
+  sait que raccourcir un texte, jamais l'étirer — glisser vers la droite
+  n'aurait aucun effet réel une fois la scène resynthétisée (le texte
+  inchangé produirait à peu près la même durée), donc autant ne pas
+  laisser croire que le geste fait quelque chose.
+- **État "busy"** (`timelinerBusy` + classe CSS `.busy` sur
+  `#timeliner-container`, qui coupe `pointer-events`) : un seul
+  `Api.update_timeline` en vol à la fois — la resynthèse/le re-rendu réels
+  peuvent prendre plusieurs dizaines de secondes, un deuxième glisser
+  pendant ce délai enverrait un `TimelineJSON` basé sur un `currentProject`
+  déjà périmé.
+- Vérifié par un harnais pywebview réel avec de vrais glissers simulés
+  (`dispatchEvent` mousedown/mousemove/mouseup, comme `editor_wysiwyg_test.py`
+  cette session) sur le projet `.vchalk` à 8 scènes : réordonnancement
+  confirmé identique côté DOM et côté `Api._current_project`, raccourcissement
+  confirmé avec une VRAIE resynthèse SAPI (durée mesurée avant/après, pas
+  simulée), tentative de rallongement confirmée sans effet. Piège rencontré
+  en écrivant ce test (pas un bug produit) : `evaluate_js` pour lire un
+  état DOM pendant qu'un `Api.update_timeline` synchrone est en vol côté
+  pont pywebview s'est avéré peu fiable (le polling ne voyait jamais l'état
+  "terminé" alors que le rendu Python avait bien fini) — corrigé en
+  sondant l'état Python directement (`api._current_project`, accessible
+  dans le même process de test) plutôt que le DOM.
+
+### Anime.js — Tâche 4
+
+Premier usage réel d'Anime.js dans le moteur, conforme à la décision actée
+plus haut (additif, portée limitée au fondu/easing, jamais son moteur
+temps réel). `app/render/web_template/anime.min.js` (v3.2.2, vendue
+localement — même convention que `opentype.min.js`, aucune dépendance
+réseau au rendu, embarquée automatiquement dans l'installateur via le
+`Datas` du spec PyInstaller qui inclut tout le dossier `web_template`).
+
+- **`motion_easing.js`** (`window.easedProgress(linearProgress, easingName)`) :
+  wrapper autour de `anime.easing(name)` — Anime.js utilisé UNIQUEMENT
+  comme bibliothèque d'easing pur (une fonction mathématique
+  `progress -> progress`), jamais `anime({...})`/`autoplay`/
+  `requestAnimationFrame`. Résultat toujours ramené à `[0, 1]` :
+  certaines courbes nommées (`easeOutElastic`, `easeOutBack`...) dépassent
+  momentanément cet intervalle, ce qui casserait silencieusement
+  `ctx.globalAlpha` (la spec Canvas ignore une valeur hors `[0,1]` et
+  GARDE l'ancienne au lieu de lever une erreur — un fondu piloté par une
+  courbe qui dépasse 1 se figerait au lieu de continuer). D'où le choix de
+  courbes non dépassantes (`easeOutCubic`/`easeInCubic`) pour ce premier
+  usage.
+- **Deux emplacements touchés**, tous les deux dans `renderAtTime`
+  (`index.html`) — le seul point d'entrée du rendu réellement déterministe
+  (jamais l'éditeur WYSIWYG, `ui/editor/editor_canvas.js`, qui affiche
+  l'état complet d'une scène sans notion de progression temporelle, donc
+  hors sujet ici) :
+  - Fondu d'apparition d'une image (`stroke.kind === "image"`) :
+    `easeOutCubic` au lieu d'un `globalAlpha = progress` linéaire.
+  - Poses mascotte `appear`/`disappear` (`mascot.js`) : `easeOutCubic`/
+    `easeInCubic` sur l'alpha ET l'échelle (même valeur eased pour les
+    deux, cohérence visuelle) au lieu d'une interpolation linéaire.
+    `idle`/`wave`/`point` restent inchangées (pas de transition à easer,
+    juste une pose continue).
+- **Vérifié par un harnais pywebview réel** contre le VRAI render surface
+  (`web_template/index.html`, celui utilisé par `FrameCapture`) : valeurs
+  d'easing lues en conditions réelles dans le navigateur (`easeOutCubic(0.5)
+  = 0.875`, `easeInCubic(0.5) = 0.125`, exact), puis une scène synthétique
+  (image + mascotte) échantillonnée pixel par pixel à plusieurs instants —
+  la trajectoire de fondu mesurée suit bien la courbe eased théorique
+  (`0.15 -> 0.386`, `0.5 -> 0.875`, `0.85 -> 0.997`), pas une droite.
+  Régression confirmée nulle sur le VRAI pipeline (`Api.rerender_scene`,
+  encodage ffmpeg réel) avec les nouveaux scripts chargés.
+- **Piège rencontré en écrivant ce test** (pas un bug produit) : échantillonner
+  le pixel à des instants espacés SANS recharger la scène entre deux
+  empile plusieurs dessins semi-transparents les uns sur les autres — le
+  moteur "accumule, n'efface jamais" (voir plus haut) fonctionne
+  correctement sur des frames RÉELLES très rapprochées (1/30s), mais de
+  grands sauts de test faussent la lecture en cumulant l'opacité de
+  plusieurs passages. Corrigé en rechargeant la scène avant chaque
+  échantillon isolé.
+
+### UX enseignants non-pro — Tâche 5
+
+Dernière tâche du blueprint : polish, sans changement de comportement,
+sur la Timeliner (Tâches 2-3) — le public cible n'est jamais le
+développeur qui l'a construite (un professeur qui n'a jamais lu le code,
+voir aussi la carte "Cohérence de style, personnage, humour" côté
+brainstorming, jamais approfondie mais dans le même esprit).
+
+- **Labels clairs** : `scene_id` technique (`"scene-001"`) ne fuite plus
+  nulle part dans l'UI visible — remplacé par "Scène N" (position dans
+  `Project.scenes`, même numérotation que les blocs de la timeline) à la
+  fois dans la liste de scènes à gauche (`editor.js::renderSceneList`) et
+  dans l'infobulle des blocs de la timeline. Le vocabulaire technique des
+  actions mascotte (`action_type` : `"appear"`, `"wave"`...) est traduit
+  pour l'infobulle (`MASCOT_ACTION_LABELS_FR`, `timeliner.js`) plutôt que
+  montré tel quel.
+- **Couleurs sobres** : les 5 couleurs par `action_type` mascotte
+  (`MASCOT_ACTION_COLORS`) réduites à UNE seule couleur pour toute la
+  piste mascotte, une autre pour la piste image — un professeur n'a pas
+  besoin de distinguer "wave" de "point" au premier coup d'œil sur une
+  bande de quelques millimètres, seulement de voir "il se passe quelque
+  chose ici" ; le détail reste dans l'infobulle au survol. Légende à deux
+  entrées ajoutée sous l'en-tête "Montage" pour nommer ces deux couleurs.
+- **Doc courte, en contexte** : une ligne d'aide directement dans l'en-tête
+  du panneau ("Glissez un bloc pour changer l'ordre des scènes ; tirez son
+  bord droit pour la raccourcir") plutôt qu'un document séparé — ce public
+  ne lira jamais `docs/architecture.md`. Poignée de redimensionnement
+  redessinée avec un repère visuel à trois traits (au lieu d'une simple
+  bande sans indice) pour qu'elle se découvre sans dépendre d'un survol.
+- Aucun changement de comportement (glisser/API `update_timeline`
+  inchangés) : vérifié par un harnais pywebview réel — labels "Scène N"
+  partout, légende et aide présentes, infobulles sans vocabulaire anglais
+  technique, et sélection par clic toujours fonctionnelle après le
+  changement de libellés. Piège rencontré en écrivant ce test (pas un bug
+  produit) : `timeliner.js` n'écoute pas l'événement `"click"` mais
+  `mousedown`+`mouseup` (pour distinguer un clic d'un glisser, voir Tâche
+  3) — un `dispatchEvent("click")` simulé dans le test ne déclenchait donc
+  jamais la sélection ; corrigé en simulant la vraie séquence d'événements.
+
 ## Arborescence
 
 ```
@@ -1562,6 +1748,16 @@ appel réseau/LLM/TTS ni de vrai rendu ffmpeg/capture d'écran :
   bout via `apply_nl_edit_command`, et preuve que la commande NL et
   `timeline_to_project` produisent un résultat identique pour le même
   texte/la même durée cible.
+- `test_api_bridge_update_timeline.py` — Tâche 3 : `Api.update_timeline`
+  (`Pipeline` entièrement simulé) — un réordonnancement seul re-rend mais
+  ne resynthétise jamais, un changement de durée resynthétise ET re-rend,
+  un round-trip sans édition ne fait ni l'un ni l'autre (mais sauvegarde
+  quand même), et le dict `project` retourné reflète la VRAIE durée issue
+  de la resynthèse simulée (pas la valeur provisoire posée par
+  `truncate_voice_over_to_duration`). Le glisser réel (réordonner/
+  raccourcir/tentative de rallonger, avec une vraie resynthèse SAPI et un
+  vrai re-rendu ffmpeg) est vérifié séparément par un harnais pywebview
+  avec `dispatchEvent` simulé — voir la section Timeline éditable plus haut.
 
 `tests/conftest.py` fournit `FakeLLMProvider` (sous-classe de
 `LLMProvider` qui rejoue une liste de réponses brutes préparées à

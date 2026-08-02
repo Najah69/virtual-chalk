@@ -78,18 +78,27 @@ function drawMascotEyes(ctx, cx, cy, size, color, bob, blink) {
 }
 
 window.MASCOT_POSES = {
+  // easeOutCubic/easeInCubic (window.easedProgress, voir motion_easing.js)
+  // plutôt qu'une interpolation linéaire — la mascotte arrive/repart avec
+  // une accélération naturelle au lieu d'un mouvement mécanique à vitesse
+  // constante. Premier usage d'Anime.js dans le moteur (additif, voir
+  // docs/architecture.md) : uniquement comme bibliothèque d'easing pur,
+  // jamais son moteur temps réel — appelé ici avec la même valeur t
+  // EXACTE que le reste du rendu déterministe (renderAtTime, index.html).
   appear: function (ctx, cx, cy, size, color, progress) {
-    const scale = Math.max(0.05, progress);
+    const eased = window.easedProgress(progress, "easeOutCubic");
+    const scale = Math.max(0.05, eased);
     ctx.save();
-    ctx.globalAlpha = progress;
+    ctx.globalAlpha = eased;
     drawMascotBody(ctx, cx, cy, size * scale, color, 0);
     drawMascotEyes(ctx, cx, cy, size * scale, color, 0, false);
     ctx.restore();
   },
   disappear: function (ctx, cx, cy, size, color, progress) {
-    const scale = Math.max(0.05, 1 - progress);
+    const eased = window.easedProgress(progress, "easeInCubic");
+    const scale = Math.max(0.05, 1 - eased);
     ctx.save();
-    ctx.globalAlpha = 1 - progress;
+    ctx.globalAlpha = 1 - eased;
     drawMascotBody(ctx, cx, cy, size * scale, color, 0);
     drawMascotEyes(ctx, cx, cy, size * scale, color, 0, false);
     ctx.restore();
