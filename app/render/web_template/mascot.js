@@ -17,6 +17,7 @@ window.MASCOT_POINT_REACH = 260;
 
 window.MASCOT_COLORS = {
   chalk_board: "#ffe66d",
+  chalk_board_black: "#ffe66d",
   whiteboard_marker: "#1f5fd1",
 };
 

@@ -50,6 +50,14 @@ window.onPipelineProgress = function (step, fraction) {
   document.getElementById("progress-bar").value = fraction;
 };
 
+// Le choix noir/vert (voir #chalk-board-color, index.html) n'a de sens que
+// pour la carte "chalk_board" — chalk_board_black n'existe pas comme carte
+// à part entière, c'est une variante résolue au moment de "Générer la
+// vidéo →" (voir btn-go-step4) à partir de ce choix.
+function _updateBoardColorVisibility(themeId) {
+  document.getElementById("chalk-board-color").style.display = themeId === "chalk_board" ? "block" : "none";
+}
+
 async function loadThemeGallery() {
   const gallery = document.getElementById("theme-gallery");
   const themes = [
@@ -63,9 +71,11 @@ async function loadThemeGallery() {
     card.addEventListener("click", () => {
       gallery.querySelectorAll(".theme-card").forEach((c) => c.classList.remove("selected"));
       card.classList.add("selected");
+      _updateBoardColorVisibility(card.dataset.theme);
     });
   });
   gallery.querySelector(".theme-card").classList.add("selected");
+  _updateBoardColorVisibility(gallery.querySelector(".theme-card").dataset.theme);
 }
 
 async function loadVoices() {
@@ -112,6 +122,80 @@ function resolveSource() {
   if (url) return { type: "url", value: url };
   return { type: "text", value: document.getElementById("source-text").value };
 }
+
+// Pré-génération de schémas vers la bibliothèque personnelle (optionnel,
+// étape 1, voir Api.suggest_library_diagrams/pregenerate_library_diagrams) :
+// flux volontairement à deux temps (proposer puis confirmer) — chaque
+// schéma généré coûte un appel Gemini Image, jamais déclenché sans action
+// explicite de l'utilisateur (même philosophie que l'auto-critique
+// visuelle, voir docs/architecture.md).
+document.getElementById("btn-suggest-diagrams").addEventListener("click", async () => {
+  const btn = document.getElementById("btn-suggest-diagrams");
+  const listEl = document.getElementById("diagram-suggestions-list");
+  const genBtn = document.getElementById("btn-generate-library-diagrams");
+  const resultEl = document.getElementById("library-diagrams-result");
+  resultEl.textContent = "";
+  genBtn.style.display = "none";
+  btn.disabled = true;
+  const originalLabel = btn.textContent;
+  btn.textContent = "Analyse en cours...";
+  try {
+    const source = resolveSource();
+    const descriptions = await window.pywebview.api.suggest_library_diagrams(source);
+    listEl.style.display = "block";
+    if (descriptions.length === 0) {
+      listEl.innerHTML = "<p>Aucun schéma pertinent identifié pour ce texte.</p>";
+      return;
+    }
+    listEl.innerHTML = descriptions
+      .map(
+        (d) => `
+          <label style="display:block; margin-top:4px">
+            <input type="checkbox" class="diagram-suggestion-check" checked />
+            ${d}
+          </label>`
+      )
+      .join("");
+    genBtn.style.display = "inline-block";
+  } catch (err) {
+    resultEl.textContent = `Erreur : ${err}`;
+    resultEl.style.color = "#c0392b";
+  } finally {
+    btn.disabled = false;
+    btn.textContent = originalLabel;
+  }
+});
+
+document.getElementById("btn-generate-library-diagrams").addEventListener("click", async () => {
+  const btn = document.getElementById("btn-generate-library-diagrams");
+  const listEl = document.getElementById("diagram-suggestions-list");
+  const resultEl = document.getElementById("library-diagrams-result");
+  const descriptions = Array.from(listEl.querySelectorAll(".diagram-suggestion-check:checked")).map(
+    (c) => c.parentElement.textContent.trim()
+  );
+  resultEl.style.color = "";
+  if (descriptions.length === 0) {
+    resultEl.textContent = "Aucun schéma sélectionné.";
+    resultEl.style.color = "#c0392b";
+    return;
+  }
+  resultEl.textContent = `Génération en cours (${descriptions.length} schéma(s))...`;
+  btn.disabled = true;
+  try {
+    const result = await window.pywebview.api.pregenerate_library_diagrams(descriptions);
+    const addedCount = result.added.length;
+    const failedCount = result.failed_count;
+    resultEl.textContent =
+      failedCount > 0
+        ? `${addedCount} schéma(s) ajouté(s) à votre bibliothèque, ${failedCount} échec(s).`
+        : `${addedCount} schéma(s) ajouté(s) à votre bibliothèque.`;
+  } catch (err) {
+    resultEl.textContent = `Erreur : ${err}`;
+    resultEl.style.color = "#c0392b";
+  } finally {
+    btn.disabled = false;
+  }
+});
 
 // --- Étape 1 -> 2 : génère le script (seul appel LLM coûteux avant la
 // révision) puis affiche une zone de texte éditable par scène. Rien n'est
@@ -176,7 +260,10 @@ document.getElementById("btn-go-step4").addEventListener("click", async () => {
   }));
   const voiceProfile = document.getElementById("voice-select").value;
   const exportH5p = document.getElementById("export-h5p").checked;
-  const theme = document.querySelector(".theme-card.selected")?.dataset.theme || "chalk_board";
+  let theme = document.querySelector(".theme-card.selected")?.dataset.theme || "chalk_board";
+  if (theme === "chalk_board" && document.querySelector('input[name="chalk-board-color"]:checked')?.value === "black") {
+    theme = "chalk_board_black";
+  }
   const mascotEnabled = document.getElementById("mascot-enabled").checked;
   const autoCritique = document.getElementById("auto-critique").checked;
   try {

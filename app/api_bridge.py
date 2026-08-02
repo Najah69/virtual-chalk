@@ -15,6 +15,7 @@ from app.h5p.packager import build_h5p
 from app.i18n.translate import translate_project
 from app.ingestion.text_normalizer import normalize_source
 from app.library.asset_library import add_asset, load_library, remove_asset
+from app.library.diagram_suggestions import suggest_diagram_topics
 from app.local_media_server import serve as serve_media
 from app.llm.deepseek import DeepSeekProvider
 from app.llm.gemini import GeminiProvider
@@ -136,6 +137,27 @@ class Api:
 
     def delete_library_asset(self, asset_id: str) -> None:
         remove_asset(asset_id)
+
+    def suggest_library_diagrams(self, source: dict[str, Any]) -> list[str]:
+        """Étape 1 de l'assistant, action optionnelle distincte de
+        "Continuer" (voir app/library/diagram_suggestions.py) : propose une
+        liste de schémas pertinents pour le texte source AVANT même de
+        lancer la génération du script — `source` a le même format que
+        generate_script ({"type": ..., "value": ...}), pour proposer sur
+        exactement le même contenu (texte collé, fichier, URL, GitHub) que
+        celui qui sera utilisé pour le script."""
+        text = normalize_source(source)
+        pipeline = self._build_pipeline(_DEFAULT_VOICE_PROFILE)
+        return suggest_diagram_topics(pipeline.llm, text)
+
+    def pregenerate_library_diagrams(self, descriptions: list[str]) -> dict[str, Any]:
+        """Génère/vectorise réellement les schémas retenus par l'utilisateur
+        parmi ceux proposés par suggest_library_diagrams, et les ajoute à la
+        Bibliothèque personnelle (voir Pipeline.generate_library_diagrams).
+        Coûte un appel Gemini Image par description — n'est jamais appelée
+        implicitement, uniquement sur clic explicite côté UI."""
+        pipeline = self._build_pipeline(_DEFAULT_VOICE_PROFILE)
+        return pipeline.generate_library_diagrams(descriptions)
 
     def get_settings(self) -> dict[str, Any]:
         from dataclasses import asdict

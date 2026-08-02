@@ -45,6 +45,21 @@
       <p style="margin-top:4px; font-size:13px; color:#666">
         Décochez pour un tableau paysage classique (1920x1080) qui utilise toute la largeur.
       </p>
+      <fieldset style="margin-top:24px">
+        <legend>Pré-générer des schémas pour ce thème (optionnel)</legend>
+        <p style="font-size:13px; color:#666; margin-top:0">
+          Analyse le texte ci-dessus et propose des schémas à ajouter à votre
+          bibliothèque personnelle avant même de lancer le script — utile
+          pour préparer un thème récurrent (molécules, graphiques...) sans
+          attendre qu'il soit mentionné dans une leçon.
+        </p>
+        <button class="secondary" id="btn-suggest-diagrams">Suggérer des schémas</button>
+        <div id="diagram-suggestions-list" style="margin-top:12px; display:none"></div>
+        <button class="primary" id="btn-generate-library-diagrams" style="margin-top:12px; display:none">
+          Générer et ajouter à ma bibliothèque
+        </button>
+        <div id="library-diagrams-result" style="margin-top:8px; font-size:13px"></div>
+      </fieldset>
       <div style="margin-top:24px">
         <button class="primary" id="btn-go-step2">Générer le script →</button>
       </div>
@@ -61,6 +76,16 @@
     <section class="step-panel" data-step="3">
       <h2>Style et voix</h2>
       <div class="theme-gallery" id="theme-gallery"></div>
+      <div id="chalk-board-color" style="display:none; margin-top:12px">
+        <label style="margin-right:16px">
+          <input type="radio" name="chalk-board-color" value="green" checked />
+          Vert (salle de classe)
+        </label>
+        <label>
+          <input type="radio" name="chalk-board-color" value="black" />
+          Noir (ardoise)
+        </label>
+      </div>
       <label style="display:block; margin-top:20px">
         Voix
         <select id="voice-select"></select>

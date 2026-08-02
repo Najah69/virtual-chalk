@@ -3,12 +3,13 @@ from __future__ import annotations
 import logging
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Callable, Optional
+from typing import Any, Callable, Optional
 
 from app.critique.visual_critique import run_critique_loop
 from app.h5p.bookmarks import generate_bookmarks
 from app.h5p.interactions import build_interaction
 from app.h5p.packager import build_h5p
+from app.library.asset_library import add_asset
 from app.llm.base import LLMProvider
 from app.llm.gemini import GeminiProvider
 from app.llm.prompts import DEFAULT_VIDEO_PROFILE
@@ -16,6 +17,7 @@ from app.render.capture import FrameCapture
 from app.render.diagram_generator import DIAGRAM_LINE_WIDTH, generate_diagram_points
 from app.render.ffmpeg_wrapper import concat_scenes
 from app.render.partial_render import render_all, render_scene
+from app.render.theme_registry import palette_for_theme
 from app.render.window_registry import get_render_window
 from app.scenes.project_file import PROJECT_FILE_EXTENSION, save_project_file
 from app.scenes.schema import Project, Scene, add_mascot_timeline
@@ -24,6 +26,13 @@ from app.tts.base import TTSProvider, VoiceProfile
 logger = logging.getLogger(__name__)
 
 ProgressCallback = Optional[Callable[[str, float], None]]
+
+# Cadre de placement neutre passe a generate_diagram_points pour une
+# pre-generation vers la bibliotheque (voir Pipeline.generate_library_diagrams)
+# : sans incidence sur le resultat stocke, seule la boite englobante REELLE
+# des points obtenus compte une fois passee a asset_library.add_asset (qui
+# normalise a partir de cette boite, pas du cadre demande a Gemini).
+_LIBRARY_PLACEMENT_SIZE = 400.0
 
 
 DEFAULT_LANGUAGE = "fr"
@@ -134,6 +143,51 @@ class Pipeline:
                 scene.strokes.remove(stroke)
             if on_progress:
                 on_progress("diagram", (i + 1) / len(pending))
+
+    def generate_library_diagrams(self, descriptions: list[str],
+                                   on_progress: ProgressCallback = None) -> dict[str, Any]:
+        """Pré-génère des schémas vectorisés directement dans la
+        Bibliothèque personnelle (app/library/asset_library.py), HORS de
+        tout Project — action explicite de l'utilisateur (voir
+        Api.pregenerate_library_diagrams), jamais appelée depuis
+        generate_project/finish_generation. `descriptions` vient de
+        app/library/diagram_suggestions.py, déjà relue/filtrée par
+        l'utilisateur avant cet appel.
+
+        Couleur fixée sur la palette craie (thème provisoire, même logique
+        que generate_script avant que le vrai thème ne soit choisi à
+        l'étape 3 de l'assistant) — l'utilisateur peut recolorer
+        manuellement une fois l'élément placé dans une scène.
+
+        Dégradation gracieuse PAR description, même logique que
+        generate_diagrams : un échec individuel (réseau, vectorisation
+        vide...) ne doit jamais interrompre le reste du lot déjà payé en
+        appels Gemini."""
+        if not self.diagram_api_key:
+            raise RuntimeError("Pas de cle API Gemini configuree pour les diagrammes")
+        color = palette_for_theme("chalk_board")[0]
+        added: list[dict[str, Any]] = []
+        failed_count = 0
+        for i, description in enumerate(descriptions):
+            try:
+                points = generate_diagram_points(
+                    description, self.diagram_api_key,
+                    0.0, 0.0, _LIBRARY_PLACEMENT_SIZE, _LIBRARY_PLACEMENT_SIZE,
+                )
+                if not points:
+                    raise RuntimeError("Vectorisation vide")
+                xs = [p.x for p in points]
+                ys = [p.y for p in points]
+                bbox = {"x": min(xs), "y": min(ys), "w": max(xs) - min(xs), "h": max(ys) - min(ys)}
+                raw_points = [{"x": p.x, "y": p.y, "penUp": p.penUp} for p in points]
+                asset = add_asset(description, "shape", color, raw_points, bbox)
+                added.append(asset.to_dict())
+            except Exception:
+                logger.exception("Echec de pre-generation du schema %r", description)
+                failed_count += 1
+            if on_progress:
+                on_progress("library_diagram", (i + 1) / len(descriptions))
+        return {"added": added, "failed_count": failed_count}
 
     def resynthesize_scene(self, scene: Scene, voice_profile: VoiceProfile) -> None:
         """Re-synthétise la voix d'UNE scène (contrairement à

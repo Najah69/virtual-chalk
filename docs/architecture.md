@@ -82,19 +82,14 @@ image brute non compressée — voir `marker_veleda.js` pour comparaison :
 le feutre dessine un trait plein lisse (`ctx.stroke()`), donc ce problème
 de dispersion ne le concerne pas.
 
-### Cadre en bois et réalisme du tableau
-
-Retour utilisateur, comparé directement à une photo de référence d'un
-vrai tableau craie : la couleur de fond était déjà dans la bonne famille
-(`#1f4d3a`, un vert forêt sombre — voir `surfaces/greenboard.js`), mais
-deux écarts significatifs manquaient.
+### Grain et texture du tableau
 
 **Grain à grande échelle** (`_addSoftClouds`, `board_noise.js`) : le
-grain existant n'était qu'un bruit fin pixel-par-pixel (amplitude ±5,
-non corrélé spatialement — comme de la neige TV), alors qu'un vrai
-tableau essuyé au chiffon montre de larges zones plus claires en arcs
-(traces de chiffon, grande échelle, organique). Ajouté en superposition
-du grain fin : 10 à 18 dégradés radiaux doux, positionnés/dimensionnés/
+grain de base n'est qu'un bruit fin pixel-par-pixel (`_fineGrain`,
+amplitude ±5, non corrélé spatialement — comme de la neige TV), alors
+qu'un vrai tableau essuyé au chiffon montre de larges zones plus claires
+en arcs (traces de chiffon, grande échelle, organique). Superposé au
+grain fin : 10 à 18 dégradés radiaux doux, positionnés/dimensionnés/
 pivotés/aplatis aléatoirement, à très faible opacité (0.03-0.08) — un
 bruit BASSE fréquence, contrairement au grain fin haute fréquence, donc
 beaucoup moins coûteux à compresser en H.264 malgré la couche
@@ -104,91 +99,53 @@ transformé laisse un bord dur visible (le rayon du dégradé, calibré pour
 un cercle, dépasse le petit axe de l'ellipse avant de s'estomper à
 alpha=0) — corrigé en définissant le dégradé et la forme remplie dans le
 même espace transformé (`translate`+`rotate`+`scale`), jamais l'un dans
-l'espace canvas brut et l'autre dans un espace déformé.
+l'espace canvas brut et l'autre dans un espace déformé. Fonction partagée
+(`buildBoardNoise`) par les trois surfaces tableau (`blackboard.js`,
+`greenboard.js`, `whiteboard.js`) — seule la couleur de fond passée en
+paramètre change.
 
-**Cadre en bois** (`_drawWoodFrame`, largeur = `BOARD_FRAME_RATIO` × plus
-petite dimension du canvas, identique en portrait/paysage puisque les
-deux partagent 1080px comme plus petite dimension) : totalement absent
-auparavant, le tableau occupait tout le canvas bord à bord. **Décision
-structurante** :
-le cadre RÉTRÉCIT la zone craie utilisable à l'intérieur du canvas
-existant plutôt que d'agrandir le canvas pour l'accueillir en plus —
-choisi pour ne rien changer au système de coordonnées 0-100 % utilisé
-partout ailleurs (icônes, texte, diagrammes, placement de la mascotte).
-En contrepartie, `strokes_from_visual_elements` (`app/scenes/schema.py`)
-passe désormais une marge de `resolve_overlaps` élargie
-(`BOARD_FRAME_RATIO` + `BOARD_FRAME_MARGIN_PADDING`, DOIT rester
-synchronisé avec la constante JS du même nom) plutôt que l'ancien défaut
-fixe de 20px, pour qu'un élément placé par le LLM ne se retrouve jamais
-dessiné sous le cadre. Appliqué même pour `whiteboard_marker` (sans
-cadre) : une marge un peu plus généreuse y est sans conséquence, évite
-de faire dépendre le calcul du thème.
+### Cadre en bois — retiré, remplacé par un choix de couleur noir/vert
 
-**Bâtons de craie** : deux formes statiques dans le coin bas-droit (coin
-OPPOSÉ à `MASCOT_ANCHOR_FRACTION`, bas-gauche, pour ne jamais se
-chevaucher avec une mascotte). Font partie du fond statique mis en cache
-(comme le cadre) — respectés automatiquement par le mécanisme
-d'effacement local des animations, qui redessine depuis ce même cache.
+Le cadre en bois autour du tableau craie a été retravaillé deux fois
+(base unie + bandes de teinte, puis une version complète avec montants en
+onglet, veinage directionnel, dégradé et feuillure — voir l'historique
+git pour le détail de ces deux itérations) sans jamais atteindre un rendu
+jugé satisfaisant par l'utilisateur. Décision explicite : retiré
+entièrement (`_drawWoodFrame`/`_miteredSidePath`/`_woodGrainStreaks`/
+`_drawChalkSticks`/`buildFramedBoardNoise` supprimés de `board_noise.js`,
+`BOARD_FRAME_RATIO` retiré) plutôt que de continuer à itérer dessus. Le
+grain de fond (voir ci-dessus) reste inchangé — c'était déjà ce
+qu'utilisaient `blackboard.js`/`whiteboard.js`, `greenboard.js` l'utilise
+maintenant aussi, juste sans cadre autour.
 
-La clé de cache (`window._boardTextureCache["greenboard"]`) reste
-inchangée malgré le nouveau constructeur de texture (`buildFramedBoardNoise`,
-passé en paramètre optionnel à `getCachedBoardTexture` plutôt que
-remplacer la fonction par défaut) : `index.html`/`mascot.js` relisent ce
-cache par le nom exact de la surface pour l'effacement local — une clé
-différente aurait cassé ce mécanisme silencieusement.
+**Choix noir/vert** (idée pour compenser la perte du cadre, proposée par
+l'utilisateur) : `blackboard.js` (fond `#161616`) existait déjà dans le
+code mais n'était référencé par aucun thème — code mort en attente,
+utilisable directement une fois câblé. Nouveau thème
+`chalk_board_black` (`web_template/themes.js`), strictement identique à
+`chalk_board` (palette, outil craie, couleurs de texte/mascotte/icônes
+sémantiques — dupliquées dans `app/render/theme_registry.py`, à garder
+synchronisé avec `themes.js` comme documenté en tête de ce fichier) sauf
+la surface (`blackboard` au lieu de `greenboard`). Comme ces mécanismes
+sont déjà génériques par `theme_id` (recoloration au changement de
+thème, édition NL `set_theme`/`VALID_THEMES`, export...), aucun autre
+changement n'a été nécessaire ailleurs dans le pipeline — confirmé
+l'intuition de l'utilisateur qu'ajouter cette variante n'affecterait rien
+d'autre.
 
-Vérifié à travers toute la chaîne, pas seulement sur une capture canvas
-brute : rendu réel (vraie synthèse vocale, vrai encodage H.264) puis
-frame extraite du MP4 final — cadre et texture survivent proprement à la
-compression, texte manuscrit toujours lisible par-dessus.
+UI (étape 3 "Style et voix", `ui/index.html`/`ui/js/app.js`) : un choix
+noir/vert apparaît sous la galerie de thèmes uniquement quand "Tableau
+craie" est sélectionné, résolu en `chalk_board_black` au moment de
+"Générer la vidéo →" si "Noir" est coché — `chalk_board` (vert) reste
+l'id envoyé par défaut, aucune migration nécessaire pour les projets
+`.vchalk` existants.
 
-### Cadre en bois v2 — retour "trop plat/cheap"
-
-Retour utilisateur après coup, à nouveau comparé à la même photo de
-référence : la première version (base brune unie + quelques bandes de
-teinte aléatoires + un trait de séparation) restait plate à l'écran —
-aucune des vraies caractéristiques d'un cadre en bois PHOTOGRAPHIÉ n'y
-était : pas de veinage directionnel, pas de joints d'onglet aux coins,
-pas de dégradé d'éclairage à travers l'épaisseur d'un montant. Réécrit
-entièrement (`_drawWoodFrame`, `board_noise.js`), avec une palette
-calibrée sur de vraies moyennes de pixels de la photo (pas choisie à
-l'oeil) plutôt qu'un brun neutre générique.
-
-- **Montants coupés en onglet à 45°** (`_miteredSidePath`) : les 4 côtés
-  du cadre sont désormais 4 régions trapézoïdales distinctes (clippées),
-  pas un seul rectangle plein — condition nécessaire pour que des joints
-  de coin et un veinage propre à chaque côté aient un sens.
-- **Veinage directionnel** (`_woodGrainStreaks`) : traits longs et
-  LÉGÈREMENT ONDULÉS (courbe quadratique, pas des droites) courant le
-  long de l'axe de chaque montant — horizontal sur les traverses haut/bas,
-  vertical sur les montants gauche/droite. L'ancienne version dessinait
-  des droites 1-2px dans n'importe quel sens sur tout le canvas, à
-  travers plusieurs montants à la fois.
-- **Dégradé perpendiculaire au fil** par montant : plus clair vers le
-  bord extérieur du cadre, plus sombre vers le bord intérieur (là où le
-  tableau s'encastre) — donne un profil légèrement bombé/biseauté au lieu
-  d'un aplat de couleur uniforme.
-- **Liseré clair juste avant la rainure sombre** (`bevelHighlight`) :
-  repéré en scannant les pixels de la photo de référence à la jonction
-  cadre/tableau — un pic de luminosité net juste avant la ligne sombre,
-  signe d'une feuillure biseautée qui accroche la lumière plutôt qu'une
-  simple marche d'escalier. Sans lui, la transition cadre → tableau reste
-  plate même avec le dégradé par montant.
-- **Joints d'onglet aux coins** : fins traits diagonaux à 45° à chaque
-  coin, superposés après les 4 montants — la séparation visible entre
-  deux pièces de bois assemblées, absente d'une bordure de couleur unie.
-- Palette recalibrée sur des moyennes de pixels réelles de la photo
-  (`base #6e3a0f`, `light #a8734b`, `dark #462302`, `groove #140a03`,
-  `bevelHighlight #c99a72`) — nettement plus roux/saturé que le brun
-  neutre `#8a5a34` d'origine, qui contribuait à l'aspect plastique.
-
-Vérifié : rendu réel du render surface aux deux orientations (paysage et
-portrait — les 4 montants en onglet restent corrects, juste des
-proportions différentes), zoom pixel sur un coin pour confirmer l'absence
-d'artefact de raccord entre montants adjacents, puis à nouveau toute la
-chaîne réelle (vraie synthèse, vrai encodage H.264, frame extraite du MP4
-final) — grain, joints d'onglet, dégradé et rainure survivent proprement
-à la compression.
+Conséquence côté placement (`app/scenes/schema.py`) : la marge
+`resolve_overlaps` qui élargissait l'espace réservé pour ne jamais
+dessiner sous le cadre (`BOARD_FRAME_RATIO` + `BOARD_FRAME_MARGIN_PADDING`)
+redevient une simple constante plate (`BOARD_EDGE_MARGIN_PX = 20.0`),
+identique pour tous les thèmes et les deux orientations — voir
+`tests/test_board_edge_margin.py`.
 
 ### Texte manuscrit (contours réels)
 
@@ -783,6 +740,28 @@ réduit sur la piste craie) — uniquement pour le thème craie, pas pour le
 thème feutre (`theme_registry.py`). Remplacer les sons synthétisés par de
 vrais enregistrements ne demande aucun changement de code (voir
 `resources/chalk_sounds/README.txt`).
+
+### Erreurs ffmpeg opaques (retour utilisateur)
+
+**Piège rencontré (bug, retour utilisateur, capture d'écran)** : un
+encodage de scène a échoué avec le message "Command [...] returned
+non-zero exit status 3752568763" affiché tel quel dans l'UI — un nombre
+sans aucun sens pour l'utilisateur (`encode_scene`/`concat_scenes`
+appelaient `subprocess.run(cmd, check=True)` sans capturer stderr ;
+`CalledProcessError` ne rapporte que le code de sortie brut). En rejouant
+la commande manuellement, stderr révélait la cause réelle : `[vf#0:0]
+Error while filtering: Cannot allocate memory` dans le filtre `scale`
+(mémoire système épuisée en cours d'encodage — machine à 8 Go de RAM,
+moins de 1,5 Go libre au moment du test, plusieurs applications ouvertes
+en parallèle). Pas un bug du pipeline vidéo lui-même : une scène de 26 s en
+1080×1920 à 30 fps n'a rien d'anormal à encoder.
+
+Correction apportée (`app/render/ffmpeg_wrapper.py`) : `_run()` capture
+désormais stderr (`capture_output=True, text=True`) et lève `FFmpegError`
+avec les 15 dernières lignes de stderr plutôt que de laisser remonter un
+`CalledProcessError` muet — la prochaine panne, quelle qu'en soit la
+cause, sera diagnosticable directement depuis le message affiché à
+l'utilisateur, sans avoir à rejouer la commande à la main.
 
 ## Fournisseurs pluggables (LLM / TTS)
 
@@ -1698,7 +1677,9 @@ projets futurs, jamais embarquée dans un `.vchalk`), **statique pour
 l'instant** (les presets animés, ex. "mon orbite à 3 corps", dépendent d'un
 panneau de propriétés pour éléments animés qui n'existe pas encore — phase
 séparée), et **aucune connaissance du LLM** (purement manuel via l'éditeur,
-pas de suggestion automatique à la génération).
+pas de suggestion automatique à la génération). Cette dernière décision a
+depuis été nuancée par la pré-génération par lot décrite plus bas — voir
+"Pré-génération de schémas vers la bibliothèque".
 
 - **`app/library/asset_library.py`** : `LibraryAsset` (dataclass), stocké
   en JSON dans `config_dir()/asset_library.json` (même répertoire que
@@ -1762,6 +1743,59 @@ pas de suggestion automatique à la génération).
   sur la normalisation (aller-retour pixel exact) et la persistance
   (kind non éligible rejeté, nom vide replié sur "Sans titre",
   suppression ciblée).
+
+### Pré-génération de schémas vers la bibliothèque
+
+Idée utilisateur (discussion sur comment enrichir automatiquement le
+résultat sans laisser le LLM écrire du nouveau code de rendu — rejeté :
+problème de sécurité/fiabilité d'exécuter du code généré, alors que le
+pipeline de diagrammes existant couvre déjà tout schéma STATIQUE quel que
+soit le sujet, sans jamais avoir besoin d'un "vocabulaire" pré-défini).
+Étape 1 de l'assistant, entièrement optionnelle : avant même de lancer le
+script, un appel LLM analyse le texte source et propose une liste de
+schémas pertinents pour ce thème (ex: "molécule de sucre", "graphique
+simplifié du krach de 1929"), que l'utilisateur relit, décoche
+éventuellement, puis confirme — chaque schéma retenu est alors généré/
+vectorisé et déposé dans la Bibliothèque personnelle (section précédente),
+prêt à être replacé sur n'importe quelle scène, y compris dans un futur
+projet sur le même thème.
+
+Flux volontairement **à deux temps** (proposer puis confirmer
+explicitement), jamais une génération automatique en un clic : chaque
+schéma coûte un vrai appel Gemini Image, même philosophie que l'auto-
+critique visuelle plus bas (jamais activé sans décision explicite de
+l'utilisateur, pour ne jamais dépenser des appels API à son insu).
+
+- **`app/library/diagram_suggestions.py`** (nouveau) : `suggest_diagram_topics(llm, source_text)`, un seul appel `llm.complete_json` (même
+  pattern que `apply_nl_edit_command`), plafonné à `MAX_SUGGESTIONS = 6`
+  pour borner le coût de la passe de génération qui suit. Réutilise le LLM
+  de script déjà configuré par l'utilisateur (pas nécessairement Gemini) —
+  seule la vectorisation qui suit exige Gemini, exactement comme pour un
+  diagramme en scène. Dégradation silencieuse (liste vide) sur
+  `LLMJsonError`, jamais d'exception : ce n'est qu'une aide optionnelle.
+- **`Pipeline.generate_library_diagrams`** (`app/pipeline.py`) : pour
+  chaque description retenue, appelle `generate_diagram_points` (même
+  fonction que pour un diagramme de scène) avec un cadre de placement
+  neutre fixe — sans incidence sur le résultat stocké, seule la boîte
+  englobante RÉELLE des points obtenus compte une fois passée à
+  `asset_library.add_asset`, qui normalise à partir de cette boîte.
+  Couleur fixée sur la palette craie (thème provisoire, même logique que
+  `generate_script` avant que le vrai thème ne soit choisi à l'étape 3).
+  Dégradation gracieuse PAR description (même logique que
+  `generate_diagrams`) : un échec individuel ne doit jamais interrompre le
+  reste du lot déjà payé en appels Gemini — renvoie le compte d'ajouts
+  réussis et d'échecs plutôt qu'une exception globale.
+- **`Api.suggest_library_diagrams`/`pregenerate_library_diagrams`**
+  (`app/api_bridge.py`) : la suggestion réutilise le même format `source`
+  que `generate_script` (`{"type": ..., "value": ...}`) pour proposer sur
+  exactement le même contenu (texte collé, fichier, URL, GitHub) que celui
+  qui sera utilisé pour le script.
+- **UX** (étape 1, `ui/index.html`/`ui/js/app.js`) : bouton "Suggérer des
+  schémas" → liste à cocher (tout coché par défaut) → bouton "Générer et
+  ajouter à ma bibliothèque" actif seulement une fois des suggestions
+  affichées. Bloc entièrement indépendant du bouton "Générer le script →" :
+  n'interfère jamais avec le flux normal, avec ou sans passage par cette
+  pré-génération.
 
 ## Boucle d'auto-critique visuelle
 
@@ -2101,13 +2135,11 @@ appel réseau/LLM/TTS ni de vrai rendu ffmpeg/capture d'écran :
 - `test_editor_wysiwyg.py` (mis à jour) — `rerender_scene`/`rerender_all`
   renvoient désormais une URL servie (`http://127.0.0.1:...`) plutôt que
   le chemin brut, cohérent avec le correctif ci-dessus.
-- `test_board_frame.py` — le cadre en bois du tableau (`BOARD_FRAME_RATIO`)
-  élargit correctement la marge de `resolve_overlaps` (plus que l'ancien
-  défaut fixe de 20px), et cette marge reste identique en portrait et en
-  paysage. Ne couvre que la conséquence côté Python — le rendu visuel réel
-  (texture, biseau, bâtons de craie) est vérifié séparément via un script
-  de fumée qui capture un vrai canvas puis une frame extraite d'une vidéo
-  encodée réelle, pas reproductible en pytest pur.
+- `test_board_edge_margin.py` — la marge de sécurité entre un élément
+  placé par le LLM et le bord du tableau (`BOARD_EDGE_MARGIN_PX`) est bien
+  appliquée par `resolve_overlaps`, et reste identique en portrait et en
+  paysage (constante plate depuis le retrait du cadre en bois, voir
+  "Cadre en bois — retiré").
 - `test_orbit_animation.py` — premier verbe de la grammaire de mouvement :
   résolution pourcentage → pixels des corps et du centre, bornes de
   sécurité (nombre de corps, taille minimale), icônes inconnues filtrées

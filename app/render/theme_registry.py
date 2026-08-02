@@ -3,11 +3,16 @@
 # parse pas le JS).
 THEME_TOOLS = {
     "chalk_board": "chalk",
+    # Même outil/palette/couleurs que chalk_board — variante "noir" du
+    # tableau craie (voir web_template/themes.js), seule la couleur de
+    # fond diffère.
+    "chalk_board_black": "chalk",
     "whiteboard_marker": "marker_veleda",
 }
 
 THEME_PALETTES = {
     "chalk_board": ["#ffffff", "#ffe66d", "#ff6b6b", "#6bd4ff", "#8fe388", "#ff9ecb", "#ffa94d", "#c2a878"],
+    "chalk_board_black": ["#ffffff", "#ffe66d", "#ff6b6b", "#6bd4ff", "#8fe388", "#ff9ecb", "#ffa94d", "#c2a878"],
     "whiteboard_marker": ["#1a1a1a", "#1f5fd1", "#e0313b", "#1f9e56", "#f2a900", "#8a5a2b"],
 }
 
@@ -39,6 +44,10 @@ THEME_SEMANTIC_COLORS = {
         "water": "#6bd4ff", "sky": "#ffffff", "sun": "#ffe66d",
         "vegetation": "#8fe388", "earth": "#c2a878",
     },
+    "chalk_board_black": {
+        "water": "#6bd4ff", "sky": "#ffffff", "sun": "#ffe66d",
+        "vegetation": "#8fe388", "earth": "#c2a878",
+    },
     "whiteboard_marker": {
         "water": "#1f5fd1", "sky": "#1a1a1a", "sun": "#f2a900",
         "vegetation": "#1f9e56", "earth": "#8a5a2b",
@@ -55,6 +64,7 @@ THEME_SEMANTIC_COLORS = {
 # plusieurs textes apparaissent dans la même scène.
 THEME_TEXT_COLORS = {
     "chalk_board": ["#ffffff", "#ffe66d"],
+    "chalk_board_black": ["#ffffff", "#ffe66d"],
     "whiteboard_marker": ["#1a1a1a", "#1f5fd1"],
 }
 

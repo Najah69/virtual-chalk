@@ -5,8 +5,18 @@ répertoire que app/settings.py::config_dir), jamais embarqué dans un
 projet, disponible dans tous les projets futurs. Décisions actées avant
 d'écrire ce code : purement statique pour l'instant (pas de presets animés
 — dépend d'un panneau de propriétés pour éléments animés qui n'existe pas
-encore), et aucune connaissance du LLM (purement manuel via l'éditeur, pas
-de suggestion automatique à la génération)."""
+encore).
+
+Ce module lui-même reste sans connaissance du LLM (purement des
+opérations CRUD sur fichier JSON) — mais depuis l'ajout de la pré-
+génération par lot (voir app/library/diagram_suggestions.py,
+Pipeline.generate_library_diagrams), `add_asset` peut être appelé aussi
+bien depuis l'éditeur (enregistrement manuel d'un élément déjà sur une
+scène) que depuis ce mécanisme de pré-génération (étape 1 de l'assistant).
+Dans les deux cas l'ajout reste une action EXPLICITE de l'utilisateur :
+aucun appel automatique/implicite pendant une génération normale de
+projet (Pipeline.generate_project/finish_generation n'écrivent jamais
+dans la bibliothèque)."""
 
 from __future__ import annotations
 

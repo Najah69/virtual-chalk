@@ -8,6 +8,15 @@ window.THEMES = {
     tool: "chalk",
     palette: ["#ffffff", "#ffe66d", "#ff6b6b", "#6bd4ff", "#8fe388", "#ff9ecb", "#ffa94d"],
   },
+  // Même palette/outil que chalk_board — seule la couleur de fond change
+  // (surface "blackboard" au lieu de "greenboard", voir surfaces/). Choix
+  // noir/vert exposé à l'étape 3 de l'assistant (ui/js/app.js).
+  chalk_board_black: {
+    label: "Tableau craie (noir)",
+    surface: "blackboard",
+    tool: "chalk",
+    palette: ["#ffffff", "#ffe66d", "#ff6b6b", "#6bd4ff", "#8fe388", "#ff9ecb", "#ffa94d"],
+  },
   whiteboard_marker: {
     label: "Tableau blanc + feutres",
     surface: "whiteboard",

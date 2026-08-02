@@ -31,20 +31,12 @@ ICON_SIZE = 220.0
 # milieu en haut) sans dépendre de la précision du LLM sur x/y.
 TITLE_TOP_BAND_PCT = 30.0
 
-# Largeur du cadre en bois du thème chalk_board, en fraction de la plus
-# petite dimension du canvas — DOIT rester synchronisé avec
-# window.BOARD_FRAME_RATIO dans
-# app/render/web_template/surfaces/board_noise.js. Utilisé ici pour
-# élargir la marge de resolve_overlaps (voir strokes_from_visual_elements)
-# afin qu'un élément placé par le LLM ne se retrouve jamais dessiné sous
-# le cadre. Appliqué même pour whiteboard_marker (qui n'a pas de cadre) :
-# une marge un peu plus généreuse y est sans conséquence, et ça évite de
-# faire dépendre ce calcul du thème.
-BOARD_FRAME_RATIO = 0.035
-# Marge de sécurité en plus du cadre lui-même — reprend l'ancienne valeur
-# par défaut de resolve_overlaps(margin=20.0), conservée pour ne pas
-# recoller les éléments juste contre le biseau intérieur du cadre.
-BOARD_FRAME_MARGIN_PADDING = 20.0
+# Marge de sécurité entre un élément placé par le LLM et le bord du
+# tableau (voir strokes_from_visual_elements/resolve_overlaps) — valeur
+# par défaut d'origine de resolve_overlaps(margin=20.0), avant l'ajout
+# puis le retrait du cadre en bois (retour utilisateur, voir
+# docs/architecture.md).
+BOARD_EDGE_MARGIN_PX = 20.0
 
 
 def canvas_dimensions(mobile_layout: bool) -> tuple[float, float]:
@@ -372,8 +364,7 @@ def strokes_from_visual_elements(elements: list[dict[str, Any]], theme: str,
             planned.append({"kind": "diagram", "x": x, "y": y, "size": width_px, "height": height_px,
                              "content": description, "name": "", "color": color})
 
-    board_margin = min(canvas_width, canvas_height) * BOARD_FRAME_RATIO + BOARD_FRAME_MARGIN_PADDING
-    resolve_overlaps(planned, canvas_width, canvas_height, margin=board_margin)
+    resolve_overlaps(planned, canvas_width, canvas_height, margin=BOARD_EDGE_MARGIN_PX)
 
     return [
         Stroke(points=[Point(el["x"], el["y"])], color=el["color"], width=el["size"],

@@ -34,7 +34,7 @@ from app.scenes.schema import (
 
 logger = logging.getLogger(__name__)
 
-VALID_THEMES = ("chalk_board", "whiteboard_marker")
+VALID_THEMES = ("chalk_board", "chalk_board_black", "whiteboard_marker")
 
 
 class EditCommandError(RuntimeError):

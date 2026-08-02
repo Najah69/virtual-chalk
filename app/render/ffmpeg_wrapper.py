@@ -7,9 +7,33 @@ from pathlib import Path
 
 FFMPEG_BIN = Path(__file__).resolve().parent.parent.parent / "resources" / "ffmpeg" / "ffmpeg.exe"
 
+# Nombre de dernières lignes de stderr conservées dans le message d'erreur —
+# la sortie ffmpeg est très verbeuse (une ligne de progression par frame)
+# mais l'erreur réelle (filtre, codec, mémoire...) est quasi toujours dans
+# les toutes dernières lignes.
+_STDERR_TAIL_LINES = 15
+
+
+class FFmpegError(RuntimeError):
+    """Echec ffmpeg rapportant le VRAI message d'erreur (stderr), pas
+    seulement le code de sortie brut d'un CalledProcessError — rencontré en
+    pratique : un encodage a échoué avec le code 3752568763 (0xDFABA7BB,
+    valeur système sans rapport avec ffmpeg lui-même), et sans stderr
+    capturé l'UI n'affichait que ce nombre opaque, impossible à
+    diagnostiquer sans relancer la commande à la main pour découvrir la
+    cause réelle (ici : "Cannot allocate memory" dans le filtre `scale`,
+    mémoire système épuisée en cours d'encodage)."""
+
 
 def _ffmpeg() -> str:
     return str(FFMPEG_BIN) if FFMPEG_BIN.exists() else "ffmpeg"
+
+
+def _run(cmd: list[str]) -> None:
+    result = subprocess.run(cmd, capture_output=True, text=True)
+    if result.returncode != 0:
+        tail = "\n".join(result.stderr.strip().splitlines()[-_STDERR_TAIL_LINES:])
+        raise FFmpegError(f"ffmpeg a échoué (code {result.returncode}) :\n{tail}")
 
 
 def encode_scene(frames_dir: Path, audio_path: Path, fps: int, out_path: Path,
@@ -50,7 +74,7 @@ def encode_scene(frames_dir: Path, audio_path: Path, fps: int, out_path: Path,
         "-c:v", "libx264", "-crf", "18", "-pix_fmt", "yuv420p", "-color_range", "tv",
         "-c:a", "aac", "-shortest", str(out_path),
     ]
-    subprocess.run(cmd, check=True)
+    _run(cmd)
     return out_path
 
 
@@ -60,8 +84,5 @@ def concat_scenes(scene_paths: list[Path], out_path: Path) -> Path:
             list_file.write(f"file '{p.as_posix()}'\n")
         concat_list = list_file.name
 
-    subprocess.run(
-        [_ffmpeg(), "-y", "-f", "concat", "-safe", "0", "-i", concat_list, "-c", "copy", str(out_path)],
-        check=True,
-    )
+    _run([_ffmpeg(), "-y", "-f", "concat", "-safe", "0", "-i", concat_list, "-c", "copy", str(out_path)])
     return out_path
